@@ -1,0 +1,2 @@
+# Redirect www to apex domain
+https://www.flowmint.me/* https://flowmint.me/:splat 301

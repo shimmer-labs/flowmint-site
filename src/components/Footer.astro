@@ -1,0 +1,172 @@
+---
+// Footer component with Shimmer Labs branding
+const currentYear = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-content">
+      <div class="footer-brand">
+        <a href="/" class="footer-logo">
+          <img src="/logo-icon.png" alt="FlowMint" width="32" height="32" />
+          <span>FlowMint</span>
+        </a>
+        <p class="footer-tagline">AI-powered email flows for Shopify</p>
+      </div>
+
+      <div class="footer-links">
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="#features">Features</a></li>
+            <li><a href="#pricing">Pricing</a></li>
+            <li><a href="#faq">FAQ</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <ul>
+            <li><a href="/privacy">Privacy Policy</a></li>
+            <li><a href="/terms">Terms of Service</a></li>
+            <li><a href="/support">Support</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Contact</h4>
+          <ul>
+            <li><a href="mailto:logan@shimmerlabs.co">logan@shimmerlabs.co</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <p>
+        &copy; {currentYear} FlowMint. All rights reserved.
+        <span class="shimmer-credit">
+          A <a href="https://shimmerlabs.co" target="_blank" rel="noopener">Shimmer Labs</a> product.
+        </span>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    background: var(--slate-900);
+    color: var(--slate-300);
+    padding: var(--space-16) 0 var(--space-8);
+    margin-top: auto;
+  }
+
+  .footer-content {
+    display: grid;
+    gap: var(--space-12);
+    margin-bottom: var(--space-12);
+  }
+
+  @media (min-width: 768px) {
+    .footer-content {
+      grid-template-columns: 1.5fr 2fr;
+    }
+  }
+
+  .footer-brand {
+    max-width: 280px;
+  }
+
+  .footer-logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: white;
+    font-weight: 700;
+    font-size: var(--text-lg);
+    margin-bottom: var(--space-3);
+  }
+
+  .footer-logo img {
+    border-radius: var(--radius-sm);
+  }
+
+  .footer-tagline {
+    color: var(--slate-400);
+    font-size: var(--text-sm);
+  }
+
+  .footer-links {
+    display: grid;
+    gap: var(--space-8);
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (min-width: 768px) {
+    .footer-links {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .footer-col h4 {
+    color: white;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--space-4);
+  }
+
+  .footer-col ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .footer-col li {
+    margin-bottom: var(--space-2);
+  }
+
+  .footer-col a {
+    color: var(--slate-400);
+    font-size: var(--text-sm);
+    transition: color var(--transition-fast);
+  }
+
+  .footer-col a:hover {
+    color: white;
+  }
+
+  .footer-bottom {
+    padding-top: var(--space-8);
+    border-top: 1px solid var(--slate-800);
+    text-align: center;
+  }
+
+  .footer-bottom p {
+    font-size: var(--text-sm);
+    color: var(--slate-500);
+  }
+
+  .shimmer-credit {
+    display: block;
+    margin-top: var(--space-1);
+  }
+
+  @media (min-width: 768px) {
+    .shimmer-credit {
+      display: inline;
+      margin-top: 0;
+      margin-left: var(--space-2);
+    }
+  }
+
+  .shimmer-credit a {
+    color: var(--slate-400);
+    text-decoration: underline;
+  }
+
+  .shimmer-credit a:hover {
+    color: var(--mint-fresh);
+  }
+</style>
