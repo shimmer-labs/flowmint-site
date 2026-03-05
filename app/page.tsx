@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useAuth } from "@/app/contexts/AuthContext";
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -10,24 +12,25 @@ export default function Home() {
   const [progress, setProgress] = useState(0);
   const [currentTask, setCurrentTask] = useState("");
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
 
-  const handlePurchase = async (planId: string) => {
-    try {
-      const response = await fetch('/api/checkout', {
+  const handlePurchase = (planId: string) => {
+    if (user) {
+      // Authenticated — go straight to checkout
+      fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ planId }),
       })
-      const data = await response.json()
-      if (data.url) {
-        window.location.href = data.url
-      } else if (data.error === 'Not authenticated') {
-        router.push(`/signup?redirectTo=/#pricing`)
-      } else {
-        alert(data.error || 'Failed to start checkout')
-      }
-    } catch {
-      alert('Something went wrong. Please try again.')
+        .then(res => res.json())
+        .then(data => {
+          if (data.url) window.location.href = data.url
+          else alert(data.error || 'Failed to start checkout')
+        })
+        .catch(() => alert('Something went wrong. Please try again.'))
+    } else {
+      // Not authenticated — redirect to signup with plan intent
+      router.push(`/signup?plan=${planId}&redirectTo=/api/checkout-redirect?plan=${planId}`)
     }
   }
 
@@ -136,24 +139,40 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="text-2xl font-bold text-mint-700">FlowMint</div>
           <nav className="hidden md:flex gap-6 items-center">
-            <a
-              href="#how-it-works"
-              className="text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              How It Works
-            </a>
-            <a
-              href="#pricing"
-              className="text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              Pricing
-            </a>
-            <a
-              href="#faq"
-              className="text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              FAQ
-            </a>
+            {user ? (
+              <>
+                <Link href="/dashboard" className="text-gray-600 hover:text-gray-900 transition-colors">
+                  Dashboard
+                </Link>
+                <Link href="/templates" className="text-gray-600 hover:text-gray-900 transition-colors">
+                  Templates
+                </Link>
+                <Link href="/settings" className="text-gray-600 hover:text-gray-900 transition-colors">
+                  Settings
+                </Link>
+              </>
+            ) : (
+              <>
+                <a href="#how-it-works" className="text-gray-600 hover:text-gray-900 transition-colors">
+                  How It Works
+                </a>
+                <a href="#pricing" className="text-gray-600 hover:text-gray-900 transition-colors">
+                  Pricing
+                </a>
+                <a href="#faq" className="text-gray-600 hover:text-gray-900 transition-colors">
+                  FAQ
+                </a>
+                <Link href="/login" className="text-gray-600 hover:text-gray-900 transition-colors">
+                  Log in
+                </Link>
+                <Link
+                  href="/signup"
+                  className="bg-mint-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-mint-700 transition-colors text-sm"
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       </header>
@@ -294,6 +313,27 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Social Proof */}
+      <section className="py-16 bg-white border-b border-gray-100">
+        <div className="max-w-4xl mx-auto px-6 text-center">
+          <p className="text-gray-500 text-sm font-medium uppercase tracking-wider mb-6">Trusted by growing brands</p>
+          <div className="grid grid-cols-3 gap-8 max-w-lg mx-auto">
+            <div>
+              <div className="text-3xl font-bold text-gray-900">18+</div>
+              <div className="text-sm text-gray-500 mt-1">Email flows</div>
+            </div>
+            <div>
+              <div className="text-3xl font-bold text-gray-900">5</div>
+              <div className="text-sm text-gray-500 mt-1">Platforms</div>
+            </div>
+            <div>
+              <div className="text-3xl font-bold text-gray-900">30s</div>
+              <div className="text-sm text-gray-500 mt-1">Brand analysis</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Pricing */}
       <section id="pricing" className="py-24">
         <div className="max-w-6xl mx-auto px-6">
@@ -303,18 +343,15 @@ export default function Home() {
           <p className="text-center text-gray-600 mb-16 text-lg">
             Pay once, use forever. No monthly fees.
           </p>
-          <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
             {/* Free */}
-            <div className="border border-gray-200 rounded-xl p-8">
-              <h3 className="text-xl font-semibold mb-2">Free</h3>
-              <div className="text-4xl font-bold mb-6">
+            <div className="border border-gray-200 rounded-xl p-6">
+              <h3 className="text-lg font-semibold mb-2">Free</h3>
+              <div className="text-3xl font-bold mb-5">
                 $0
-                <span className="text-base font-normal text-gray-500">
-                  {" "}
-                  forever
-                </span>
+                <span className="text-sm font-normal text-gray-500"> forever</span>
               </div>
-              <ul className="space-y-3 mb-8 text-gray-600">
+              <ul className="space-y-2.5 mb-6 text-sm text-gray-600">
                 <li className="flex items-start gap-2">
                   <span className="text-mint-500 mt-0.5">&#10003;</span>
                   Unlimited brand analyses
@@ -329,31 +366,53 @@ export default function Home() {
                 </li>
               </ul>
               <button
-                onClick={() =>
-                  document
-                    .querySelector("input")
-                    ?.focus()
-                }
-                className="w-full py-3 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                onClick={() => document.querySelector("input")?.focus()}
+                className="w-full py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors text-sm"
               >
                 Get Started Free
               </button>
             </div>
 
+            {/* Essentials */}
+            <div className="border border-gray-200 rounded-xl p-6">
+              <h3 className="text-lg font-semibold mb-2">Essentials</h3>
+              <div className="text-3xl font-bold mb-5">
+                $49
+                <span className="text-sm font-normal text-gray-500"> one-time</span>
+              </div>
+              <ul className="space-y-2.5 mb-6 text-sm text-gray-600">
+                <li className="flex items-start gap-2">
+                  <span className="text-mint-500 mt-0.5">&#10003;</span>
+                  Export 3 core flows
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-mint-500 mt-0.5">&#10003;</span>
+                  Push to all platforms
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-mint-500 mt-0.5">&#10003;</span>
+                  Email support
+                </li>
+              </ul>
+              <button
+                onClick={() => handlePurchase('essentials')}
+                className="w-full py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors text-sm"
+              >
+                Buy Essentials — $49
+              </button>
+            </div>
+
             {/* Complete */}
-            <div className="border-2 border-mint-500 rounded-xl p-8 relative shadow-lg">
+            <div className="border-2 border-mint-500 rounded-xl p-6 relative shadow-lg">
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-mint-500 text-white text-xs font-bold px-3 py-1 rounded-full">
                 MOST POPULAR
               </span>
-              <h3 className="text-xl font-semibold mb-2">Complete</h3>
-              <div className="text-4xl font-bold mb-6">
+              <h3 className="text-lg font-semibold mb-2">Complete</h3>
+              <div className="text-3xl font-bold mb-5">
                 $99
-                <span className="text-base font-normal text-gray-500">
-                  {" "}
-                  one-time
-                </span>
+                <span className="text-sm font-normal text-gray-500"> one-time</span>
               </div>
-              <ul className="space-y-3 mb-8 text-gray-600">
+              <ul className="space-y-2.5 mb-6 text-sm text-gray-600">
                 <li className="flex items-start gap-2">
                   <span className="text-mint-500 mt-0.5">&#10003;</span>
                   Export ALL 18+ flows
@@ -369,23 +428,20 @@ export default function Home() {
               </ul>
               <button
                 onClick={() => handlePurchase('complete')}
-                className="w-full py-3 bg-mint-600 text-white rounded-lg font-medium hover:bg-mint-700 transition-colors"
+                className="w-full py-2.5 bg-mint-600 text-white rounded-lg font-medium hover:bg-mint-700 transition-colors text-sm"
               >
                 Buy Complete — $99
               </button>
             </div>
 
             {/* Premium */}
-            <div className="border border-gray-200 rounded-xl p-8">
-              <h3 className="text-xl font-semibold mb-2">Premium</h3>
-              <div className="text-4xl font-bold mb-6">
+            <div className="border border-gray-200 rounded-xl p-6">
+              <h3 className="text-lg font-semibold mb-2">Premium</h3>
+              <div className="text-3xl font-bold mb-5">
                 $149
-                <span className="text-base font-normal text-gray-500">
-                  {" "}
-                  one-time
-                </span>
+                <span className="text-sm font-normal text-gray-500"> one-time</span>
               </div>
-              <ul className="space-y-3 mb-8 text-gray-600">
+              <ul className="space-y-2.5 mb-6 text-sm text-gray-600">
                 <li className="flex items-start gap-2">
                   <span className="text-mint-500 mt-0.5">&#10003;</span>
                   Everything in Complete
@@ -401,7 +457,7 @@ export default function Home() {
               </ul>
               <button
                 onClick={() => handlePurchase('premium')}
-                className="w-full py-3 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                className="w-full py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors text-sm"
               >
                 Buy Premium — $149
               </button>

@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { useAuth } from "@/app/contexts/AuthContext";
 
 interface FlowRecommendation {
   id: string;
@@ -54,6 +56,7 @@ const PLATFORMS = [
 function ResultsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { user } = useAuth();
   const analysisId = searchParams.get("id");
 
   const [analysis, setAnalysis] = useState<BrandAnalysis | null>(null);
@@ -270,9 +273,20 @@ function ResultsPage() {
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <a href="/" className="text-2xl font-bold text-mint-700">FlowMint</a>
           <div className="flex items-center gap-4">
-            <a href="/dashboard" className="text-gray-600 hover:text-gray-900 transition-colors font-medium text-sm">
-              Dashboard
-            </a>
+            {user ? (
+              <>
+                <Link href="/dashboard" className="text-gray-600 hover:text-gray-900 transition-colors font-medium text-sm">
+                  Dashboard
+                </Link>
+                <Link href="/templates" className="text-gray-600 hover:text-gray-900 transition-colors font-medium text-sm">
+                  Templates
+                </Link>
+              </>
+            ) : (
+              <Link href="/login" className="text-gray-600 hover:text-gray-900 transition-colors font-medium text-sm">
+                Log in
+              </Link>
+            )}
             <button
               onClick={() => router.push("/")}
               className="text-gray-600 hover:text-gray-900 transition-colors font-medium text-sm"
@@ -457,16 +471,27 @@ function ResultsPage() {
                 : "Select flows above to get started"
               }
             </p>
-            <button
-              onClick={handleGenerateAll}
-              disabled={selectedFlows.size === 0}
-              className="bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed text-lg"
-            >
-              Generate {totalSelectedEmails} Emails
-            </button>
-            <p className="text-sm mt-4 opacity-75">
-              Requires a free account to save your templates
-            </p>
+            {user ? (
+              <button
+                onClick={handleGenerateAll}
+                disabled={selectedFlows.size === 0}
+                className="bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed text-lg"
+              >
+                Generate {totalSelectedEmails} Emails
+              </button>
+            ) : (
+              <Link
+                href={`/signup?redirectTo=${encodeURIComponent(`/results?id=${analysisId}`)}`}
+                className="inline-block bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl text-lg"
+              >
+                Create Free Account & Generate
+              </Link>
+            )}
+            {!user && (
+              <p className="text-sm mt-4 opacity-75">
+                Free account required to save your templates — takes 10 seconds
+              </p>
+            )}
           </div>
         )}
 

@@ -10,6 +10,12 @@ export default function SupportPage() {
       <header className="border-b border-gray-200 sticky top-0 bg-white/95 backdrop-blur-sm z-50">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <a href="/" className="text-2xl font-bold text-mint-700">FlowMint</a>
+          <nav className="flex gap-4 text-sm">
+            <a href="/" className="text-gray-600 hover:text-gray-900 transition-colors">Home</a>
+            <a href="/support" className="text-gray-600 hover:text-gray-900 transition-colors">Support</a>
+            <a href="/privacy" className="text-gray-600 hover:text-gray-900 transition-colors">Privacy</a>
+            <a href="/terms" className="text-gray-600 hover:text-gray-900 transition-colors">Terms</a>
+          </nav>
         </div>
       </header>
 

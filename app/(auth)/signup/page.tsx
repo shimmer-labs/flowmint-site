@@ -15,6 +15,7 @@ function SignupForm() {
   const [success, setSuccess] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
+  const plan = searchParams.get('plan')
   const redirectTo = searchParams.get('redirectTo') || '/dashboard'
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -66,9 +67,14 @@ function SignupForm() {
         <div className="text-center mb-8">
           <Link href="/" className="text-3xl font-bold text-mint-700">FlowMint</Link>
           <h2 className="mt-6 text-2xl font-bold text-gray-900">Create your account</h2>
+          {plan && (
+            <p className="mt-2 text-sm text-mint-700 bg-mint-50 inline-block px-3 py-1 rounded-full font-medium">
+              You&apos;re signing up for the {plan.charAt(0).toUpperCase() + plan.slice(1)} plan
+            </p>
+          )}
           <p className="mt-2 text-sm text-gray-600">
             Already have an account?{' '}
-            <Link href="/login" className="font-medium text-mint-600 hover:text-mint-700">
+            <Link href={`/login${redirectTo !== '/dashboard' ? `?redirectTo=${encodeURIComponent(redirectTo)}` : ''}`} className="font-medium text-mint-600 hover:text-mint-700">
               Sign in
             </Link>
           </p>

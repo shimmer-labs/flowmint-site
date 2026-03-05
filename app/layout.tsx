@@ -6,6 +6,14 @@ export const metadata: Metadata = {
   title: "FlowMint - AI Email Campaigns in Minutes",
   description:
     "FlowMint analyzes your brand and generates personalized email marketing campaigns in minutes. Works with any website. Push to Klaviyo, Mailchimp, ActiveCampaign, and more.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
   openGraph: {
     title: "FlowMint - AI Email Campaigns in Minutes",
     description:
