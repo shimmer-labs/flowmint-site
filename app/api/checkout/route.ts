@@ -25,14 +25,7 @@ export async function POST(request: NextRequest) {
       payment_method_types: ['card'],
       line_items: [
         {
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: `FlowMint ${plan.name}`,
-              description: plan.description,
-            },
-            unit_amount: plan.price,
-          },
+          price: plan.stripePriceId,
           quantity: 1,
         },
       ],
