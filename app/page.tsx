@@ -11,6 +11,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [progress, setProgress] = useState(0);
   const [currentTask, setCurrentTask] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
@@ -174,7 +175,63 @@ export default function Home() {
               </>
             )}
           </nav>
+          {/* Mobile hamburger */}
+          <button
+            className="md:hidden p-2 text-gray-600 hover:text-gray-900"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle menu"
+          >
+            {mobileMenuOpen ? (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            )}
+          </button>
         </div>
+        {/* Mobile menu dropdown */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-gray-200 bg-white px-6 py-4 flex flex-col gap-3">
+            {user ? (
+              <>
+                <Link href="/dashboard" className="text-gray-600 hover:text-gray-900 transition-colors py-1" onClick={() => setMobileMenuOpen(false)}>
+                  Dashboard
+                </Link>
+                <Link href="/templates" className="text-gray-600 hover:text-gray-900 transition-colors py-1" onClick={() => setMobileMenuOpen(false)}>
+                  Templates
+                </Link>
+                <Link href="/settings" className="text-gray-600 hover:text-gray-900 transition-colors py-1" onClick={() => setMobileMenuOpen(false)}>
+                  Settings
+                </Link>
+              </>
+            ) : (
+              <>
+                <a href="#how-it-works" className="text-gray-600 hover:text-gray-900 transition-colors py-1" onClick={() => setMobileMenuOpen(false)}>
+                  How It Works
+                </a>
+                <a href="#pricing" className="text-gray-600 hover:text-gray-900 transition-colors py-1" onClick={() => setMobileMenuOpen(false)}>
+                  Pricing
+                </a>
+                <a href="#faq" className="text-gray-600 hover:text-gray-900 transition-colors py-1" onClick={() => setMobileMenuOpen(false)}>
+                  FAQ
+                </a>
+                <Link href="/login" className="text-gray-600 hover:text-gray-900 transition-colors py-1" onClick={() => setMobileMenuOpen(false)}>
+                  Log in
+                </Link>
+                <Link
+                  href="/signup"
+                  className="bg-mint-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-mint-700 transition-colors text-sm text-center"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
+          </div>
+        )}
       </header>
 
       {/* Hero */}
