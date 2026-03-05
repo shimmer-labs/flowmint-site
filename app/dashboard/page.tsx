@@ -1,0 +1,31 @@
+import { ensureAuthenticated } from '@/app/lib/auth/protected'
+import { createClient } from '@/app/lib/supabase/server'
+import DashboardClient from './DashboardClient'
+
+export default async function DashboardPage() {
+  const user = await ensureAuthenticated()
+  const supabase = await createClient()
+
+  // Fetch user's brand analyses
+  const { data: analyses } = await supabase
+    .from('brand_analyses')
+    .select('id, url, analysis, created_at, last_refreshed')
+    .eq('user_id', user.id)
+    .order('last_refreshed', { ascending: false })
+
+  // Fetch user's subscription/purchase status
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan, purchased_at')
+    .eq('id', user.id)
+    .single()
+
+  return (
+    <DashboardClient
+      user={{ email: user.email!, name: user.user_metadata?.full_name }}
+      analyses={analyses || []}
+      plan={profile?.plan || 'free'}
+      purchasedAt={profile?.purchased_at}
+    />
+  )
+}
