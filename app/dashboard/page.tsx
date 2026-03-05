@@ -20,12 +20,28 @@ export default async function DashboardPage() {
     .eq('id', user.id)
     .single()
 
+  // Fetch template stats
+  const { count: templateCount } = await supabase
+    .from('email_templates')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+
+  // Count distinct flows
+  const { data: flowData } = await supabase
+    .from('email_templates')
+    .select('flow_id')
+    .eq('user_id', user.id)
+
+  const uniqueFlows = new Set(flowData?.map((t: any) => t.flow_id) || [])
+
   return (
     <DashboardClient
       user={{ email: user.email!, name: user.user_metadata?.full_name }}
       analyses={analyses || []}
       plan={profile?.plan || 'free'}
       purchasedAt={profile?.purchased_at}
+      templateCount={templateCount || 0}
+      flowCount={uniqueFlows.size}
     />
   )
 }

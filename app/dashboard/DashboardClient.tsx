@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/app/contexts/AuthContext'
+import { isPaidPlan, getPlanLabel } from '@/app/lib/plan-gating'
 
 interface Analysis {
   id: string
@@ -17,9 +18,11 @@ interface Props {
   analyses: Analysis[]
   plan: string
   purchasedAt?: string
+  templateCount: number
+  flowCount: number
 }
 
-export default function DashboardClient({ user, analyses, plan, purchasedAt }: Props) {
+export default function DashboardClient({ user, analyses, plan, purchasedAt, templateCount, flowCount }: Props) {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -27,6 +30,8 @@ export default function DashboardClient({ user, analyses, plan, purchasedAt }: P
   const [currentTask, setCurrentTask] = useState('')
   const router = useRouter()
   const { signOut } = useAuth()
+
+  const paid = isPaidPlan(plan)
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -100,36 +105,55 @@ export default function DashboardClient({ user, analyses, plan, purchasedAt }: P
     router.refresh()
   }
 
-  const planLabel = plan === 'free' ? 'Free' : plan === 'essentials' ? 'Essentials' : plan === 'complete' ? 'Complete' : plan === 'premium' ? 'Premium' : plan
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <a href="/" className="text-2xl font-bold text-mint-700">FlowMint</a>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">{user.email}</span>
+          <nav className="flex items-center gap-6">
+            <a href="/dashboard" className="text-sm text-mint-600 font-medium">Dashboard</a>
+            <a href="/templates" className="text-sm text-gray-600 hover:text-gray-900">Templates</a>
+            <a href="/settings" className="text-sm text-gray-600 hover:text-gray-900">Settings</a>
             <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-              plan === 'free' ? 'bg-gray-100 text-gray-600' : 'bg-mint-100 text-mint-700'
+              paid ? 'bg-mint-100 text-mint-700' : 'bg-gray-100 text-gray-600'
             }`}>
-              {planLabel}
+              {getPlanLabel(plan)}
             </span>
             <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
               Sign out
             </button>
-          </div>
+          </nav>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-12">
-        {/* Welcome + Analyze */}
-        <div className="mb-12">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            {user.name ? `Welcome, ${user.name.split(' ')[0]}` : 'Dashboard'}
-          </h1>
-          <p className="text-gray-600 mb-8">Analyze a website to generate personalized email flows.</p>
+        {/* Welcome */}
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          {user.name ? `Welcome, ${user.name.split(' ')[0]}` : 'Dashboard'}
+        </h1>
+        <p className="text-gray-600 mb-8">Analyze a website to generate personalized email flows.</p>
 
+        {/* Stats */}
+        {(templateCount > 0 || analyses.length > 0) && (
+          <div className="grid grid-cols-3 gap-4 mb-8">
+            <div className="bg-white rounded-lg border border-gray-200 p-5">
+              <div className="text-2xl font-bold text-gray-900">{analyses.length}</div>
+              <div className="text-sm text-gray-500">Analyses</div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 p-5">
+              <div className="text-2xl font-bold text-gray-900">{flowCount}</div>
+              <div className="text-sm text-gray-500">Flows Generated</div>
+            </div>
+            <a href="/templates" className="bg-white rounded-lg border border-gray-200 p-5 hover:border-mint-300 transition-colors">
+              <div className="text-2xl font-bold text-gray-900">{templateCount}</div>
+              <div className="text-sm text-gray-500">Templates &rarr;</div>
+            </a>
+          </div>
+        )}
+
+        {/* Analyze Form */}
+        <div className="mb-12">
           {loading ? (
             <div className="max-w-2xl bg-white rounded-xl border-2 border-mint-600 p-12 text-center shadow-lg">
               <div className="inline-block w-16 h-16 border-4 border-gray-200 border-t-mint-600 rounded-full animate-spin mb-6"></div>
@@ -198,7 +222,7 @@ export default function DashboardClient({ user, analyses, plan, purchasedAt }: P
         )}
 
         {/* Upgrade CTA for free users */}
-        {plan === 'free' && (
+        {!paid && (
           <div className="mt-12 bg-gradient-to-r from-mint-50 to-green-50 border border-mint-200 rounded-xl p-8">
             <h3 className="text-lg font-bold text-gray-900 mb-2">Upgrade to export your templates</h3>
             <p className="text-gray-600 mb-4">
