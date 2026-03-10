@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/app/contexts/AuthContext";
+import { analytics } from "@/app/lib/analytics";
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -16,6 +17,9 @@ export default function Home() {
   const { user, loading: authLoading } = useAuth();
 
   const handlePurchase = (planId: string) => {
+    const prices: Record<string, number> = { essentials: 49, complete: 99, premium: 149 }
+    analytics.beginCheckout(planId, prices[planId] || 0)
+
     if (user) {
       // Authenticated — go straight to checkout
       fetch('/api/checkout', {
@@ -88,6 +92,8 @@ export default function Home() {
         `analysis-${data.analysisId}`,
         JSON.stringify(data)
       );
+
+      analytics.generateAnalysis(validatedUrl)
 
       setTimeout(() => {
         router.push(`/results?id=${data.analysisId}`);

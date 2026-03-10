@@ -50,6 +50,30 @@ export async function POST(request: NextRequest) {
           console.error('Failed to update profile:', error)
         } else {
           console.log(`Purchase activated: user=${userId}, plan=${planId}`)
+
+          // Fire GA4 purchase event via Measurement Protocol
+          const ga4Secret = process.env.GA4_MEASUREMENT_PROTOCOL_SECRET
+          if (ga4Secret) {
+            try {
+              await fetch(`https://www.google-analytics.com/mp/collect?measurement_id=G-25H25RV136&api_secret=${ga4Secret}`, {
+                method: 'POST',
+                body: JSON.stringify({
+                  client_id: `server_${userId}`,
+                  events: [{
+                    name: 'purchase',
+                    params: {
+                      currency: 'USD',
+                      value: planId === 'essentials' ? 49 : planId === 'complete' ? 99 : 149,
+                      transaction_id: session.id,
+                      items: JSON.stringify([{ item_name: `FlowMint ${planId}` }]),
+                    }
+                  }]
+                })
+              })
+            } catch (e) {
+              console.error('GA4 MP event failed:', e)
+            }
+          }
         }
       } catch (err) {
         console.error('Database error on webhook:', err)
