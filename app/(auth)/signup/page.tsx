@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { signUp } from '@/app/lib/auth'
 import { getAuthErrorMessage } from '@/app/lib/auth/errors'
+import { analytics } from '@/app/lib/analytics'
 
 function SignupForm() {
   const [email, setEmail] = useState('')
@@ -27,10 +28,12 @@ function SignupForm() {
       const data = await signUp({ email, password, fullName })
       if (data.session) {
         // Auto-confirmed — redirect immediately
+        analytics.signUp()
         router.push(redirectTo)
         router.refresh()
       } else {
         // Email confirmation required
+        analytics.signUp()
         setSuccess(true)
       }
     } catch (error: any) {

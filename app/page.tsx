@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/app/contexts/AuthContext";
+import { analytics } from "@/app/lib/analytics";
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -16,6 +17,9 @@ export default function Home() {
   const { user, loading: authLoading } = useAuth();
 
   const handlePurchase = (purchaseType: string) => {
+    const prices: Record<string, number> = { single_flow: 29, full_campaign: 79, unlimited: 149 }
+    analytics.beginCheckout(purchaseType, prices[purchaseType] || 0)
+
     if (purchaseType === 'single_flow' || purchaseType === 'full_campaign') {
       // These need an analysis first — scroll to URL input
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -94,6 +98,8 @@ export default function Home() {
         `analysis-${data.analysisId}`,
         JSON.stringify(data)
       );
+
+      analytics.generateAnalysis(validatedUrl)
 
       setTimeout(() => {
         router.push(`/results?id=${data.analysisId}`);

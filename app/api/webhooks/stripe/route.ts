@@ -73,6 +73,31 @@ export async function POST(request: NextRequest) {
           console.error('Failed to create purchase:', error)
         } else {
           console.log(`Purchase created: user=${userId}, type=${purchaseType}, analysis=${analysisId}`)
+
+          // Fire GA4 purchase event via Measurement Protocol
+          const ga4Secret = process.env.GA4_MEASUREMENT_PROTOCOL_SECRET
+          if (ga4Secret) {
+            const prices: Record<string, number> = { single_flow: 29, full_campaign: 79, unlimited: 149 }
+            try {
+              await fetch(`https://www.google-analytics.com/mp/collect?measurement_id=G-25H25RV136&api_secret=${ga4Secret}`, {
+                method: 'POST',
+                body: JSON.stringify({
+                  client_id: `server_${userId}`,
+                  events: [{
+                    name: 'purchase',
+                    params: {
+                      currency: 'USD',
+                      value: prices[purchaseType] || 0,
+                      transaction_id: session.id,
+                      items: JSON.stringify([{ item_name: `FlowMint ${purchaseType}` }]),
+                    }
+                  }]
+                })
+              })
+            } catch (e) {
+              console.error('GA4 MP event failed:', e)
+            }
+          }
         }
       }
     } catch (err) {
