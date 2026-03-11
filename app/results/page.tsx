@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/app/contexts/AuthContext";
+import { analytics } from "@/app/lib/analytics";
 
 interface FlowRecommendation {
   id: string;
@@ -101,6 +102,7 @@ function ResultsPage() {
       const flowIds = new Set<string>(parsed.analysis.recommendedFlows.map((f: FlowRecommendation) => f.id));
       setSelectedFlows(flowIds);
       setLoading(false);
+      analytics.viewResults(analysisId!, parsed.analysis.businessModel);
     } else {
       setError("Analysis not found. Please try again.");
       setLoading(false);
@@ -179,6 +181,7 @@ function ResultsPage() {
     if (selectedFlows.size === 0) return;
     setBatchGenerating(true);
     setBatchComplete(false);
+    selectedFlows.forEach((flowId) => analytics.generateFlow(flowId));
 
     try {
       // Check if user is logged in (we need userId for storage)
@@ -539,6 +542,7 @@ function ResultsPage() {
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <button
                   onClick={() => {
+                    analytics.beginCheckout('single_flow', 29);
                     if (!user) { router.push('/signup'); return; }
                     fetch('/api/checkout', {
                       method: 'POST',
@@ -552,6 +556,7 @@ function ResultsPage() {
                 </button>
                 <button
                   onClick={() => {
+                    analytics.beginCheckout('full_campaign', 79);
                     if (!user) { router.push('/signup'); return; }
                     fetch('/api/checkout', {
                       method: 'POST',

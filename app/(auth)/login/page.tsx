@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { signIn, resetPassword } from '@/app/lib/auth'
 import { getAuthErrorMessage } from '@/app/lib/auth/errors'
+import { analytics } from '@/app/lib/analytics'
 
 function LoginForm() {
   const [email, setEmail] = useState('')
@@ -40,6 +41,7 @@ function LoginForm() {
 
     try {
       await signIn({ email, password })
+      analytics.login()
       router.push(redirectTo)
       router.refresh()
     } catch (error: any) {

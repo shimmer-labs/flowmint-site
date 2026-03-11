@@ -55,6 +55,14 @@ export const analytics = {
     gtagEvent('export', { format })
   },
 
+  viewResults: (analysisId: string, businessModel: string) => {
+    gtagEvent('view_item', { item_id: analysisId, item_category: businessModel })
+  },
+
+  viewTemplates: (templateCount: number, flowCount: number) => {
+    gtagEvent('view_item_list', { item_list_name: 'templates', items_count: templateCount, flows_count: flowCount })
+  },
+
   ctaClicked: (location: string, text: string) => {
     gtagEvent('cta_clicked', { location, cta_text: text })
   },

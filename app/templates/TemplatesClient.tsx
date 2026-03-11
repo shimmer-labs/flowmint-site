@@ -11,6 +11,7 @@ import {
   getPlanLabel,
 } from "@/app/lib/plan-gating-client";
 import type { Purchase } from "@/app/lib/stripe";
+import { analytics } from "@/app/lib/analytics";
 
 interface EmailTemplate {
   id: string;
@@ -69,6 +70,11 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
 
   // Purchase success toast
   const [showPurchaseToast, setShowPurchaseToast] = useState(false);
+
+  useEffect(() => {
+    analytics.viewTemplates(templates.length, 0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const purchased = searchParams.get("purchased");
@@ -135,6 +141,7 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
   };
 
   const handleExportFlow = async (group: FlowGroup) => {
+    analytics.exportContent('zip_single_flow');
     setExportingFlow(group.flowId);
     try {
       const res = await fetch("/api/export", {
@@ -161,6 +168,7 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
   };
 
   const handleExportAll = async () => {
+    analytics.exportContent('zip_all_flows');
     setExportingAll(true);
     try {
       const flowIds = flowGroups.filter((g) => canExportThisFlow(g)).map((g) => g.flowId);
@@ -211,6 +219,7 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
 
   const handlePurchase = async () => {
     if (!purchaseModal) return;
+    analytics.beginCheckout(purchaseChoice, purchaseChoice === 'single_flow' ? 29 : 79);
     setPurchasing(true);
     try {
       const res = await fetch("/api/checkout", {
