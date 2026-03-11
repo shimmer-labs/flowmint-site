@@ -532,12 +532,38 @@ function ResultsPage() {
               >
                 View Your Templates
               </a>
-              <a
-                href="/#pricing"
-                className="bg-white text-mint-700 font-bold py-4 px-8 rounded-lg hover:bg-gray-100 transition-colors border-2 border-mint-300 text-lg"
-              >
-                Upgrade to Export
-              </a>
+            </div>
+            {/* Purchase CTAs */}
+            <div className="mt-8 pt-6 border-t border-mint-200">
+              <p className="text-sm text-gray-600 mb-4">Ready to export? Choose a plan:</p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <button
+                  onClick={() => {
+                    if (!user) { router.push('/signup'); return; }
+                    fetch('/api/checkout', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ purchaseType: 'single_flow', analysisId, flowId: Array.from(selectedFlows)[0] }),
+                    }).then(r => r.json()).then(d => { if (d.url) window.location.href = d.url; });
+                  }}
+                  className="bg-white text-gray-700 font-semibold py-3 px-6 rounded-lg border-2 border-gray-200 hover:border-mint-300 transition-colors"
+                >
+                  Single Flow — $29
+                </button>
+                <button
+                  onClick={() => {
+                    if (!user) { router.push('/signup'); return; }
+                    fetch('/api/checkout', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ purchaseType: 'full_campaign', analysisId }),
+                    }).then(r => r.json()).then(d => { if (d.url) window.location.href = d.url; });
+                  }}
+                  className="bg-mint-700 text-white font-semibold py-3 px-6 rounded-lg hover:bg-mint-800 transition-colors"
+                >
+                  All Flows — $79 (Best Value)
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -1,5 +1,6 @@
 import { ensureAuthenticated } from '@/app/lib/auth/protected'
 import { createClient } from '@/app/lib/supabase/server'
+import { getUserPurchases, hasUnlimitedAccess } from '@/app/lib/plan-gating'
 import DashboardClient from './DashboardClient'
 
 export default async function DashboardPage() {
@@ -13,12 +14,11 @@ export default async function DashboardPage() {
     .eq('user_id', user.id)
     .order('last_refreshed', { ascending: false })
 
-  // Fetch user's subscription/purchase status
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('plan, purchased_at')
-    .eq('id', user.id)
-    .single()
+  // Fetch purchases + unlimited status
+  const [purchases, isUnlimited] = await Promise.all([
+    getUserPurchases(user.id),
+    hasUnlimitedAccess(user.id),
+  ])
 
   // Fetch template stats
   const { count: templateCount } = await supabase
@@ -38,8 +38,8 @@ export default async function DashboardPage() {
     <DashboardClient
       user={{ email: user.email!, name: user.user_metadata?.full_name }}
       analyses={analyses || []}
-      plan={profile?.plan || 'free'}
-      purchasedAt={profile?.purchased_at}
+      purchases={purchases}
+      isUnlimited={isUnlimited}
       templateCount={templateCount || 0}
       flowCount={uniqueFlows.size}
     />

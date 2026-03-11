@@ -15,13 +15,20 @@ export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
-  const handlePurchase = (planId: string) => {
+  const handlePurchase = (purchaseType: string) => {
+    if (purchaseType === 'single_flow' || purchaseType === 'full_campaign') {
+      // These need an analysis first — scroll to URL input
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      setTimeout(() => document.querySelector("input")?.focus(), 500);
+      return;
+    }
+
+    // Unlimited — direct to checkout
     if (user) {
-      // Authenticated — go straight to checkout
       fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId }),
+        body: JSON.stringify({ purchaseType }),
       })
         .then(res => res.json())
         .then(data => {
@@ -30,8 +37,7 @@ export default function Home() {
         })
         .catch(() => alert('Something went wrong. Please try again.'))
     } else {
-      // Not authenticated — redirect to signup with plan intent
-      router.push(`/signup?plan=${planId}&redirectTo=/api/checkout-redirect?plan=${planId}`)
+      router.push(`/signup?redirectTo=/api/checkout-redirect?purchaseType=${purchaseType}`)
     }
   }
 
@@ -395,131 +401,113 @@ export default function Home() {
       <section id="pricing" className="py-24">
         <div className="max-w-6xl mx-auto px-6">
           <h2 className="text-3xl font-bold text-center mb-4">
-            Simple One-Time Pricing
+            Simple Pricing. Pay When You&apos;re Ready.
           </h2>
-          <p className="text-center text-gray-600 mb-16 text-lg">
-            Pay once, use forever. No monthly fees.
+          <p className="text-center text-gray-600 mb-8 text-lg">
+            Analyze and generate for free. Pay only when you&apos;re ready to export.
           </p>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
-            {/* Free */}
+          <div className="bg-mint-50 border border-mint-200 rounded-lg px-6 py-3 text-center mb-12 max-w-xl mx-auto">
+            <p className="text-sm text-mint-800">
+              <span className="font-semibold">Always free:</span> Analyze your brand + generate + preview all flows. No signup required.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            {/* Single Flow */}
             <div className="border border-gray-200 rounded-xl p-6">
-              <h3 className="text-lg font-semibold mb-2">Free</h3>
-              <div className="text-3xl font-bold mb-5">
-                $0
-                <span className="text-sm font-normal text-gray-500"> forever</span>
+              <h3 className="text-lg font-semibold mb-2">Single Flow</h3>
+              <div className="text-3xl font-bold mb-1">
+                $29
               </div>
+              <div className="text-sm text-gray-500 mb-5">one-time per flow</div>
               <ul className="space-y-2.5 mb-6 text-sm text-gray-600">
                 <li className="flex items-start gap-2">
                   <span className="text-mint-500 mt-0.5">&#10003;</span>
-                  Unlimited brand analyses
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-mint-500 mt-0.5">&#10003;</span>
-                  Generate ALL flows for preview
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-gray-300 mt-0.5">&#10007;</span>
-                  <span className="text-gray-400">Cannot export templates</span>
-                </li>
-              </ul>
-              <button
-                onClick={() => document.querySelector("input")?.focus()}
-                className="w-full py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors text-sm"
-              >
-                Get Started Free
-              </button>
-            </div>
-
-            {/* Essentials */}
-            <div className="border border-gray-200 rounded-xl p-6">
-              <h3 className="text-lg font-semibold mb-2">Essentials</h3>
-              <div className="text-3xl font-bold mb-5">
-                $49
-                <span className="text-sm font-normal text-gray-500"> one-time</span>
-              </div>
-              <ul className="space-y-2.5 mb-6 text-sm text-gray-600">
-                <li className="flex items-start gap-2">
-                  <span className="text-mint-500 mt-0.5">&#10003;</span>
-                  Export 3 core flows
+                  <span>Export 1 flow for 1 brand<br /><span className="text-xs text-gray-400">e.g. Welcome Series or Cart Abandonment</span></span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-mint-500 mt-0.5">&#10003;</span>
                   Push to all platforms
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-mint-500 mt-0.5">&#10003;</span>
-                  Email support
-                </li>
-              </ul>
-              <button
-                onClick={() => handlePurchase('essentials')}
-                className="w-full py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors text-sm"
-              >
-                Buy Essentials — $49
-              </button>
-            </div>
-
-            {/* Complete */}
-            <div className="border-2 border-mint-500 rounded-xl p-6 relative shadow-lg">
-              <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-mint-500 text-white text-xs font-bold px-3 py-1 rounded-full">
-                MOST POPULAR
-              </span>
-              <h3 className="text-lg font-semibold mb-2">Complete</h3>
-              <div className="text-3xl font-bold mb-5">
-                $99
-                <span className="text-sm font-normal text-gray-500"> one-time</span>
-              </div>
-              <ul className="space-y-2.5 mb-6 text-sm text-gray-600">
-                <li className="flex items-start gap-2">
-                  <span className="text-mint-500 mt-0.5">&#10003;</span>
-                  Export ALL 18+ flows
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-mint-500 mt-0.5">&#10003;</span>
                   AI Template Editing
                 </li>
+              </ul>
+              <button
+                onClick={() => handlePurchase('single_flow')}
+                className="w-full py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors text-sm"
+              >
+                Get Started Free &rarr;
+              </button>
+              <p className="text-xs text-gray-400 text-center mt-2">Analyze your brand first, then purchase</p>
+            </div>
+
+            {/* Full Campaign */}
+            <div className="border-2 border-mint-500 rounded-xl p-6 relative shadow-lg">
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-mint-500 text-white text-xs font-bold px-3 py-1 rounded-full">
+                BEST VALUE
+              </span>
+              <h3 className="text-lg font-semibold mb-2">Full Campaign</h3>
+              <div className="text-3xl font-bold mb-1">
+                $79
+              </div>
+              <div className="text-sm text-gray-500 mb-5">one-time per brand</div>
+              <ul className="space-y-2.5 mb-6 text-sm text-gray-600">
+                <li className="flex items-start gap-2">
+                  <span className="text-mint-500 mt-0.5">&#10003;</span>
+                  <span>Export ALL 18+ flows for 1 brand<br /><span className="text-xs text-gray-400">Welcome, Cart Abandonment, Post-Purchase &amp; more</span></span>
+                </li>
                 <li className="flex items-start gap-2">
                   <span className="text-mint-500 mt-0.5">&#10003;</span>
                   Push to all platforms
                 </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-mint-500 mt-0.5">&#10003;</span>
+                  AI Template Editing
+                </li>
               </ul>
               <button
-                onClick={() => handlePurchase('complete')}
+                onClick={() => handlePurchase('full_campaign')}
                 className="w-full py-2.5 bg-mint-600 text-white rounded-lg font-medium hover:bg-mint-700 transition-colors text-sm"
               >
-                Buy Complete — $99
+                Get Started Free &rarr;
               </button>
+              <p className="text-xs text-gray-400 text-center mt-2">Analyze your brand first, then purchase</p>
             </div>
 
-            {/* Premium */}
+            {/* Unlimited */}
             <div className="border border-gray-200 rounded-xl p-6">
-              <h3 className="text-lg font-semibold mb-2">Premium</h3>
-              <div className="text-3xl font-bold mb-5">
+              <h3 className="text-lg font-semibold mb-2">Unlimited</h3>
+              <div className="text-3xl font-bold mb-1">
                 $149
-                <span className="text-sm font-normal text-gray-500"> one-time</span>
+                <span className="text-sm font-normal text-gray-500">/mo</span>
               </div>
+              <div className="text-sm text-gray-500 mb-5">subscription</div>
               <ul className="space-y-2.5 mb-6 text-sm text-gray-600">
                 <li className="flex items-start gap-2">
                   <span className="text-mint-500 mt-0.5">&#10003;</span>
-                  Everything in Complete
+                  Unlimited brands &amp; exports
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-mint-500 mt-0.5">&#10003;</span>
+                  Campaign Calendar
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-mint-500 mt-0.5">&#10003;</span>
                   Priority support
                 </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-mint-500 mt-0.5">&#10003;</span>
-                  Early access to new features
-                </li>
               </ul>
               <button
-                onClick={() => handlePurchase('premium')}
+                onClick={() => handlePurchase('unlimited')}
                 className="w-full py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors text-sm"
               >
-                Buy Premium — $149
+                Subscribe — $149/mo
               </button>
             </div>
           </div>
+          <p className="text-center text-xs text-gray-400 mt-6">
+            Single Flow and Full Campaign are one-time purchases locked to one brand analysis. Unlimited is a monthly subscription.
+          </p>
         </div>
       </section>
 
@@ -534,8 +522,12 @@ export default function Home() {
                 a: "No! FlowMint works with any website — Shopify, WooCommerce, Squarespace, custom sites, even brick & mortar businesses with a web presence.",
               },
               {
-                q: "Is this really a one-time purchase?",
-                a: "Yes. Pay once and use FlowMint forever. No monthly fees, no recurring charges, no surprises.",
+                q: "How does the credit system work?",
+                a: "Analyze any website for free and preview all generated flows. When you're ready to export, buy a Single Flow ($29) for one flow or a Full Campaign ($79) for all flows. Credits are locked to one brand analysis.",
+              },
+              {
+                q: "What if I have multiple brands?",
+                a: "Each brand analysis is a separate purchase. Or subscribe to Unlimited ($149/mo) for unlimited brands and exports.",
               },
               {
                 q: "Will the emails actually sound like my brand?",
@@ -544,10 +536,6 @@ export default function Home() {
               {
                 q: "What email platforms are supported?",
                 a: "Klaviyo, Mailchimp, ActiveCampaign, GetResponse, Customer.io, OmniSend, and Shopify Email. You can also export as ZIP for any other platform.",
-              },
-              {
-                q: "Can I edit the generated emails?",
-                a: "Yes. Use our AI Edit feature to refine emails with natural language instructions like 'make the CTA more urgent' or 'shorten this email.'",
               },
               {
                 q: "How is this different from ChatGPT?",

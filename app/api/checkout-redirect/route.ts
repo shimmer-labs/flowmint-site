@@ -1,19 +1,21 @@
 /**
  * API Route: Checkout Redirect
- * After signup, redirects authenticated user to Stripe checkout for their selected plan
+ * After signup, redirects authenticated user to Stripe checkout for their selected product
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/app/lib/supabase/server";
-import { getStripe, PLANS, type PlanId } from "@/app/lib/stripe";
+import { getStripe, PRODUCTS, type ProductId } from "@/app/lib/stripe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const planId = request.nextUrl.searchParams.get("plan") as PlanId | null;
+  const purchaseType = request.nextUrl.searchParams.get("purchaseType") as ProductId | null;
+  const analysisId = request.nextUrl.searchParams.get("analysisId");
+  const flowId = request.nextUrl.searchParams.get("flowId");
 
-  if (!planId || !PLANS[planId]) {
+  if (!purchaseType || !PRODUCTS[purchaseType]) {
     return NextResponse.redirect(new URL("/#pricing", request.url));
   }
 
@@ -22,34 +24,43 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
+    const params = new URLSearchParams({
+      purchaseType,
+      ...(analysisId && { analysisId }),
+      ...(flowId && { flowId }),
+    });
     return NextResponse.redirect(
-      new URL(`/signup?plan=${planId}&redirectTo=/api/checkout-redirect?plan=${planId}`, request.url)
+      new URL(`/signup?redirectTo=/api/checkout-redirect?${params.toString()}`, request.url)
     );
   }
 
   // Create Stripe checkout session
   try {
     const stripe = getStripe();
-    const plan = PLANS[planId];
+    const product = PRODUCTS[purchaseType];
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
+    const sessionParams: any = {
+      mode: product.mode,
       payment_method_types: ["card"],
       line_items: [
         {
-          price: plan.stripePriceId,
+          price: product.stripePriceId,
           quantity: 1,
         },
       ],
       metadata: {
         userId: user.id,
-        planId: planId,
+        purchaseType,
+        analysisId: analysisId || "",
+        flowId: flowId || "",
         userEmail: user.email || "",
       },
-      success_url: `${request.nextUrl.origin}/dashboard?purchased=${planId}`,
+      success_url: `${request.nextUrl.origin}/templates?purchased=${purchaseType}`,
       cancel_url: `${request.nextUrl.origin}/#pricing`,
       customer_email: user.email || undefined,
-    });
+    };
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     if (session.url) {
       return NextResponse.redirect(session.url);

@@ -43,17 +43,22 @@ CREATE TABLE IF NOT EXISTS brand_analyses (
 -- Email generation jobs
 CREATE TABLE IF NOT EXISTS generation_jobs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  url TEXT NOT NULL,
+  url TEXT,
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  flow_id TEXT,
+  flow_name TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
-  current_flow INTEGER DEFAULT 0,
+  current_flow TEXT,
+  current_flow_index INTEGER DEFAULT 0,
   total_flows INTEGER NOT NULL DEFAULT 0,
   completed_emails INTEGER DEFAULT 0,
   total_emails INTEGER NOT NULL DEFAULT 0,
   selected_flows JSONB,
   results JSONB,
   errors JSONB,
-  format TEXT DEFAULT 'plain',
+  platform TEXT DEFAULT 'klaviyo',
+  format TEXT DEFAULT 'html',
+  analysis_id UUID,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   completed_at TIMESTAMPTZ
@@ -62,7 +67,7 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
 -- Individual email templates
 CREATE TABLE IF NOT EXISTS email_templates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  url TEXT NOT NULL,
+  url TEXT,
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   job_id UUID REFERENCES generation_jobs(id),
   flow_id TEXT NOT NULL,
@@ -70,9 +75,11 @@ CREATE TABLE IF NOT EXISTS email_templates (
   email_number INTEGER NOT NULL,
   subject TEXT NOT NULL,
   preheader TEXT,
-  content TEXT NOT NULL,
-  format TEXT NOT NULL DEFAULT 'plain',
-  platform TEXT DEFAULT 'Klaviyo',
+  content TEXT,
+  body TEXT,
+  format TEXT NOT NULL DEFAULT 'html',
+  platform TEXT DEFAULT 'klaviyo',
+  analysis_id UUID,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

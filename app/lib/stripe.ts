@@ -12,33 +12,46 @@ export function getStripe(): Stripe {
 }
 
 /**
- * FlowMint pricing tiers — one-time purchases
+ * FlowMint v2 — credit-based products
  */
-export const PLANS = {
-  essentials: {
-    id: 'essentials',
-    name: 'Essentials',
-    price: 4900, // cents
-    stripePriceId: 'price_1T7k4w0rJcMXVHwsHK8p7p2a',
-    description: 'Welcome, Cart Abandonment, Post-Purchase flows',
-    allowedFlows: ['welcome', 'cart-abandonment', 'post-purchase-onboarding'],
+export const PRODUCTS = {
+  single_flow: {
+    id: 'single_flow',
+    name: 'Single Flow',
+    price: 2900, // $29
+    stripePriceId: 'price_1T9bdS0rJcMXVHwsR6A5kbm5',
+    mode: 'payment' as const,
+    description: 'Export one flow for one brand analysis',
   },
-  complete: {
-    id: 'complete',
-    name: 'Complete',
-    price: 9900,
-    stripePriceId: 'price_1T7k4w0rJcMXVHwsL1kECXAi',
-    description: 'All 18+ flows + AI Template Editing',
-    allowedFlows: null, // all flows
+  full_campaign: {
+    id: 'full_campaign',
+    name: 'Full Campaign',
+    price: 7900, // $79
+    stripePriceId: 'price_1T9bdT0rJcMXVHwsgOukTjoX',
+    mode: 'payment' as const,
+    description: 'Export ALL flows for one brand analysis',
   },
-  premium: {
-    id: 'premium',
-    name: 'Premium',
-    price: 14900,
-    stripePriceId: 'price_1T7k4w0rJcMXVHwsIaKPH0sS',
-    description: 'Everything + Campaign Calendar + Priority Support',
-    allowedFlows: null,
+  unlimited: {
+    id: 'unlimited',
+    name: 'Unlimited',
+    price: 14900, // $149/mo
+    stripePriceId: 'price_1T9bdT0rJcMXVHwsRBgD7g5Z',
+    mode: 'subscription' as const,
+    description: 'Unlimited brands, exports, and campaign calendar',
   },
 } as const
 
-export type PlanId = keyof typeof PLANS
+export type ProductId = keyof typeof PRODUCTS
+
+export interface Purchase {
+  id: string
+  user_id: string
+  stripe_session_id: string | null
+  stripe_subscription_id: string | null
+  purchase_type: ProductId
+  analysis_id: string | null
+  flow_id: string | null
+  status: string
+  exported_at: string | null
+  created_at: string
+}

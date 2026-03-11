@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/app/lib/supabase/server'
-import { getStripe, PLANS, PlanId } from '@/app/lib/stripe'
+import { getStripe, PRODUCTS, type ProductId } from '@/app/lib/stripe'
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,33 +11,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
-    const { planId } = await request.json()
+    const { purchaseType, analysisId, flowId } = await request.json()
 
-    if (!planId || !(planId in PLANS)) {
-      return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
+    if (!purchaseType || !(purchaseType in PRODUCTS)) {
+      return NextResponse.json({ error: 'Invalid purchase type' }, { status: 400 })
     }
 
-    const plan = PLANS[planId as PlanId]
+    // Validate required params based on purchase type
+    if (purchaseType === 'single_flow' && (!analysisId || !flowId)) {
+      return NextResponse.json({ error: 'analysisId and flowId required for single flow' }, { status: 400 })
+    }
+    if (purchaseType === 'full_campaign' && !analysisId) {
+      return NextResponse.json({ error: 'analysisId required for full campaign' }, { status: 400 })
+    }
+
+    const product = PRODUCTS[purchaseType as ProductId]
     const stripe = getStripe()
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
+    const sessionParams: any = {
+      mode: product.mode,
       payment_method_types: ['card'],
       line_items: [
         {
-          price: plan.stripePriceId,
+          price: product.stripePriceId,
           quantity: 1,
         },
       ],
       metadata: {
         userId: user.id,
-        planId: plan.id,
+        purchaseType,
+        analysisId: analysisId || '',
+        flowId: flowId || '',
         userEmail: user.email || '',
       },
       customer_email: user.email || undefined,
-      success_url: `${request.nextUrl.origin}/dashboard?purchased=${plan.id}`,
+      success_url: `${request.nextUrl.origin}/templates?purchased=${purchaseType}`,
       cancel_url: `${request.nextUrl.origin}/#pricing`,
-    })
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams)
 
     return NextResponse.json({ url: session.url })
   } catch (error: any) {

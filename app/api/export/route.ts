@@ -1,12 +1,14 @@
 /**
  * API Route: Export Templates as ZIP
- * Builds a ZIP file from user's generated templates
+ * Builds a ZIP file from user's generated templates (purchase-gated)
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/app/lib/supabase/server";
 import { createAdminClient } from "@/app/lib/supabase/admin";
-import { canExportFlow, isPaidPlan } from "@/app/lib/plan-gating";
+import { getUserPurchases, hasUnlimitedAccess, hasAnyPurchase } from "@/app/lib/plan-gating";
+import { canExportFlowClient, canExportAllClient } from "@/app/lib/plan-gating-client";
+import type { Purchase } from "@/app/lib/stripe";
 import JSZip from "jszip";
 
 export const runtime = "nodejs";
@@ -21,28 +23,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get plan
-    const admin = createAdminClient();
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("plan")
-      .eq("id", user.id)
-      .single();
-
-    const plan = profile?.plan || "free";
-    if (!isPaidPlan(plan)) {
-      return NextResponse.json({ error: "Upgrade to export templates" }, { status: 403 });
-    }
-
     const body = await request.json();
-    const { flowIds } = body;
+    const { flowIds, analysisId } = body;
 
     if (!flowIds?.length) {
       return NextResponse.json({ error: "No flow IDs provided" }, { status: 400 });
     }
 
+    // Fetch purchases once
+    const [purchases, isUnlimited] = await Promise.all([
+      getUserPurchases(user.id),
+      hasUnlimitedAccess(user.id),
+    ]);
+
+    // Check access — if no analysisId, allow if user has any purchase (legacy templates)
+    if (!analysisId) {
+      const hasAccess = await hasAnyPurchase(user.id);
+      if (!hasAccess) {
+        return NextResponse.json({ error: "Purchase required to export templates" }, { status: 403 });
+      }
+    }
+
+    const admin = createAdminClient();
+
     // Fetch templates
-    const { data: templates, error } = await admin
+    let query = admin
       .from("email_templates")
       .select("*")
       .eq("user_id", user.id)
@@ -50,15 +55,25 @@ export async function POST(request: NextRequest) {
       .order("flow_name")
       .order("email_number");
 
+    if (analysisId) {
+      query = query.eq("analysis_id", analysisId);
+    }
+
+    const { data: templates, error } = await query;
+
     if (error || !templates?.length) {
       return NextResponse.json({ error: "No templates found" }, { status: 404 });
     }
 
-    // Filter by plan access
-    const accessible = templates.filter((t: any) => canExportFlow(plan, t.flow_id));
+    // Filter by purchase access
+    const accessible = analysisId
+      ? templates.filter((t: any) =>
+          canExportFlowClient(purchases, isUnlimited, analysisId, t.flow_id)
+        )
+      : templates; // Legacy templates (no analysis_id) — already checked hasAnyPurchase
 
     if (accessible.length === 0) {
-      return NextResponse.json({ error: "No accessible templates for your plan" }, { status: 403 });
+      return NextResponse.json({ error: "No accessible templates for your purchases" }, { status: 403 });
     }
 
     // Build ZIP
@@ -105,6 +120,18 @@ export async function POST(request: NextRequest) {
       totalTemplates: accessible.length,
     };
     root.file("metadata.json", JSON.stringify(metadata, null, 2));
+
+    // Mark exported_at on matching purchase records
+    if (analysisId) {
+      for (const flowId of flowIds) {
+        await admin
+          .from("purchases")
+          .update({ exported_at: new Date().toISOString() })
+          .eq("user_id", user.id)
+          .eq("analysis_id", analysisId)
+          .is("exported_at", null);
+      }
+    }
 
     const zipBuffer = await zip.generateAsync({ type: "blob" });
 

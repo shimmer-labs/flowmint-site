@@ -1,6 +1,7 @@
 /**
  * API Route: AI Template Edit
  * Uses Claude to make surgical edits to email templates
+ * Gate: any active purchase (lowered from Complete+ in v2)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -22,22 +23,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const admin = createAdminClient();
-
-    // Check plan
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("plan")
-      .eq("id", user.id)
-      .single();
-
-    if (!canAIEdit(profile?.plan || "free")) {
+    // Check purchase access (any purchase unlocks AI editing)
+    if (!(await canAIEdit(user.id))) {
       return NextResponse.json(
-        { error: "AI editing requires Complete or Premium plan" },
+        { error: "Purchase required for AI editing" },
         { status: 403 }
       );
     }
 
+    const admin = createAdminClient();
     const body = await request.json();
     const { templateId, editPrompt } = body;
 
@@ -111,7 +105,6 @@ CRITICAL: Make the MINIMUM change needed. If the edit says "make the CTA more ur
     // Parse response
     let edited;
     try {
-      // Strip markdown code blocks if present
       const cleaned = response.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       edited = JSON.parse(cleaned);
     } catch {

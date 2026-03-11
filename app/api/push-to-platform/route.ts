@@ -1,12 +1,13 @@
 /**
  * API Route: Push to Platform
- * Pushes email templates to the user's email marketing platform
+ * Pushes email templates to the user's email marketing platform (purchase-gated)
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/app/lib/supabase/server";
 import { createAdminClient } from "@/app/lib/supabase/admin";
-import { canPush } from "@/app/lib/plan-gating";
+import { getUserPurchases, hasUnlimitedAccess, hasAnyPurchase } from "@/app/lib/plan-gating";
+import { canExportFlowClient } from "@/app/lib/plan-gating-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,21 +29,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const admin = createAdminClient();
-
-    // Check plan
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("plan")
-      .eq("id", user.id)
-      .single();
-
-    if (!canPush(profile?.plan || "free")) {
-      return NextResponse.json({ error: "Upgrade to push templates" }, { status: 403 });
-    }
-
     const body = await request.json();
-    const { templateIds, platform, apiKey } = body;
+    const { templateIds, platform, apiKey, analysisId } = body;
 
     if (!templateIds?.length || !platform || !apiKey) {
       return NextResponse.json(
@@ -50,6 +38,22 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Fetch purchases once
+    const [purchases, isUnlimited] = await Promise.all([
+      getUserPurchases(user.id),
+      hasUnlimitedAccess(user.id),
+    ]);
+
+    // If no analysisId, check for any purchase (legacy templates)
+    if (!analysisId) {
+      const hasAccess = await hasAnyPurchase(user.id);
+      if (!hasAccess) {
+        return NextResponse.json({ error: "Purchase required to push templates" }, { status: 403 });
+      }
+    }
+
+    const admin = createAdminClient();
 
     // Fetch templates
     const { data: templates, error } = await admin
@@ -62,10 +66,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No templates found" }, { status: 404 });
     }
 
+    // Filter by purchase access
+    const accessible = analysisId
+      ? templates.filter((t: any) =>
+          canExportFlowClient(purchases, isUnlimited, analysisId, t.flow_id)
+        )
+      : templates;
+
+    if (accessible.length === 0) {
+      return NextResponse.json({ error: "No accessible templates for your purchases" }, { status: 403 });
+    }
+
     // Push each template
     const results: PushResult[] = [];
 
-    for (const template of templates) {
+    for (const template of accessible) {
       try {
         const platformId = await pushTemplate(platform, apiKey, template);
         results.push({
@@ -92,9 +107,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: successCount > 0,
-      total: templates.length,
+      total: accessible.length,
       pushed: successCount,
-      failed: templates.length - successCount,
+      failed: accessible.length - successCount,
       results,
     });
   } catch (error: any) {
@@ -152,7 +167,6 @@ async function pushToKlaviyo(apiKey: string, template: any): Promise<string> {
 }
 
 async function pushToMailchimp(apiKey: string, template: any): Promise<string> {
-  // Mailchimp API key format: key-dc (e.g., abc123-us14)
   const dc = apiKey.split("-").pop() || "us1";
 
   const res = await fetch(`https://${dc}.api.mailchimp.com/3.0/templates`, {
@@ -177,9 +191,6 @@ async function pushToMailchimp(apiKey: string, template: any): Promise<string> {
 }
 
 async function pushToActiveCampaign(apiKey: string, template: any): Promise<string> {
-  // AC API key doesn't encode the URL, user provides it in settings
-  // For now, we'll extract the base URL from a header or require it
-  // ActiveCampaign URL format: https://yourname.api-us1.com
   throw new Error("ActiveCampaign push coming soon — use ZIP export for now");
 }
 

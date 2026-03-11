@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/app/contexts/AuthContext'
-import { isPaidPlan, getPlanLabel } from '@/app/lib/plan-gating'
+import { hasAnyPurchaseClient, hasFullCampaignClient, getPlanLabel } from '@/app/lib/plan-gating-client'
+import type { Purchase } from '@/app/lib/stripe'
 
 interface Analysis {
   id: string
@@ -16,13 +17,13 @@ interface Analysis {
 interface Props {
   user: { email: string; name?: string }
   analyses: Analysis[]
-  plan: string
-  purchasedAt?: string
+  purchases: Purchase[]
+  isUnlimited: boolean
   templateCount: number
   flowCount: number
 }
 
-export default function DashboardClient({ user, analyses, plan, purchasedAt, templateCount, flowCount }: Props) {
+export default function DashboardClient({ user, analyses, purchases, isUnlimited, templateCount, flowCount }: Props) {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -31,7 +32,25 @@ export default function DashboardClient({ user, analyses, plan, purchasedAt, tem
   const router = useRouter()
   const { signOut } = useAuth()
 
-  const paid = isPaidPlan(plan)
+  const hasPaid = hasAnyPurchaseClient(purchases, isUnlimited)
+  const planLabel = getPlanLabel(isUnlimited, purchases.length)
+
+  // Get purchase badge for an analysis
+  const getAnalysisBadge = (analysisId: string) => {
+    if (isUnlimited) return { label: 'Unlimited', color: 'bg-purple-100 text-purple-700' }
+
+    const fullCampaign = purchases.some(
+      (p) => p.analysis_id === analysisId && p.purchase_type === 'full_campaign' && p.status === 'active'
+    )
+    if (fullCampaign) return { label: 'Full Campaign', color: 'bg-mint-100 text-mint-700' }
+
+    const singleFlows = purchases.filter(
+      (p) => p.analysis_id === analysisId && p.purchase_type === 'single_flow' && p.status === 'active'
+    )
+    if (singleFlows.length > 0) return { label: `${singleFlows.length} flow${singleFlows.length !== 1 ? 's' : ''} purchased`, color: 'bg-blue-100 text-blue-700' }
+
+    return null
+  }
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -116,9 +135,9 @@ export default function DashboardClient({ user, analyses, plan, purchasedAt, tem
             <a href="/templates" className="text-sm text-gray-600 hover:text-gray-900">Templates</a>
             <a href="/settings" className="text-sm text-gray-600 hover:text-gray-900">Settings</a>
             <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-              paid ? 'bg-mint-100 text-mint-700' : 'bg-gray-100 text-gray-600'
+              hasPaid ? 'bg-mint-100 text-mint-700' : 'bg-gray-100 text-gray-600'
             }`}>
-              {getPlanLabel(plan)}
+              {planLabel}
             </span>
             <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
               Sign out
@@ -197,36 +216,46 @@ export default function DashboardClient({ user, analyses, plan, purchasedAt, tem
           <div>
             <h2 className="text-xl font-bold text-gray-900 mb-4">Previous Analyses</h2>
             <div className="grid gap-4">
-              {analyses.map((a) => (
-                <div key={a.id} className="bg-white rounded-lg border border-gray-200 p-6 flex items-center justify-between hover:shadow-sm transition-shadow">
-                  <div>
-                    <div className="font-medium text-gray-900">{a.url}</div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      {a.analysis?.businessModel && <span className="mr-4">Model: {a.analysis.businessModel}</span>}
-                      Last analyzed: {new Date(a.last_refreshed).toLocaleDateString()}
+              {analyses.map((a) => {
+                const badge = getAnalysisBadge(a.id)
+                return (
+                  <div key={a.id} className="bg-white rounded-lg border border-gray-200 p-6 flex items-center justify-between hover:shadow-sm transition-shadow">
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-medium text-gray-900">{a.url}</span>
+                        {badge && (
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge.color}`}>
+                            {badge.label}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-500 mt-1">
+                        {a.analysis?.businessModel && <span className="mr-4">Model: {a.analysis.businessModel}</span>}
+                        Last analyzed: {new Date(a.last_refreshed).toLocaleDateString()}
+                      </div>
                     </div>
+                    <button
+                      onClick={() => {
+                        sessionStorage.setItem(`analysis-${a.id}`, JSON.stringify({ analysisId: a.id, analysis: a.analysis, scrapedData: { siteName: a.url } }))
+                        router.push(`/results?id=${a.id}`)
+                      }}
+                      className="text-mint-600 hover:text-mint-700 font-medium text-sm"
+                    >
+                      View Results &rarr;
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      sessionStorage.setItem(`analysis-${a.id}`, JSON.stringify({ analysisId: a.id, analysis: a.analysis, scrapedData: { siteName: a.url } }))
-                      router.push(`/results?id=${a.id}`)
-                    }}
-                    className="text-mint-600 hover:text-mint-700 font-medium text-sm"
-                  >
-                    View Results &rarr;
-                  </button>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
 
         {/* Upgrade CTA for free users */}
-        {!paid && (
+        {!hasPaid && (
           <div className="mt-12 bg-gradient-to-r from-mint-50 to-green-50 border border-mint-200 rounded-xl p-8">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Upgrade to export your templates</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Ready to export?</h3>
             <p className="text-gray-600 mb-4">
-              Free plan lets you analyze and preview. Purchase a plan to export templates and push to your email platform.
+              Analyze and preview for free. Purchase when you&apos;re ready to export — starting at $29 per flow.
             </p>
             <a href="/#pricing" className="inline-block bg-mint-600 text-white font-medium px-6 py-3 rounded-lg hover:bg-mint-700 transition-colors">
               View Pricing
