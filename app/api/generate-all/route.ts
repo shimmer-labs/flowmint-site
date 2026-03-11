@@ -25,7 +25,10 @@ export async function POST(request: NextRequest) {
     const userId = user.id;
 
     const body = await request.json();
-    const { flowIds, brandAnalysis, platform = "klaviyo", format = "html", analysisId } = body;
+    const { flowIds, brandAnalysis, platform = "klaviyo", format = "html", analysisId: rawAnalysisId } = body;
+    // Only use analysisId if it's a valid UUID (temp IDs from anonymous analysis aren't)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const analysisId = rawAnalysisId && uuidRegex.test(rawAnalysisId) ? rawAnalysisId : null;
 
     if (!flowIds?.length || !brandAnalysis) {
       return NextResponse.json(
@@ -69,7 +72,7 @@ export async function POST(request: NextRequest) {
 
     if (jobError) {
       console.error("Failed to create master job:", JSON.stringify(jobError));
-      return NextResponse.json({ error: `Failed to create generation job: ${jobError.message} (${jobError.code})` }, { status: 500 });
+      return NextResponse.json({ error: "Failed to create generation job" }, { status: 500 });
     }
 
     // Process flows serially, emails within each flow in parallel

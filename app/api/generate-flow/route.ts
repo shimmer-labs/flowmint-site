@@ -24,7 +24,9 @@ export async function POST(request: NextRequest) {
     const userId = user.id;
 
     const body = await request.json();
-    const { flowId, brandAnalysis, platform = "klaviyo", format = "html", analysisId } = body;
+    const { flowId, brandAnalysis, platform = "klaviyo", format = "html", analysisId: rawAnalysisId } = body;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const analysisId = rawAnalysisId && uuidRegex.test(rawAnalysisId) ? rawAnalysisId : null;
 
     if (!flowId || !brandAnalysis) {
       return NextResponse.json(
