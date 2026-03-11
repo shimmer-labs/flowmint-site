@@ -68,8 +68,8 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (jobError) {
-      console.error("Failed to create master job:", jobError);
-      return NextResponse.json({ error: "Failed to create generation job" }, { status: 500 });
+      console.error("Failed to create master job:", JSON.stringify(jobError));
+      return NextResponse.json({ error: `Failed to create generation job: ${jobError.message} (${jobError.code})` }, { status: 500 });
     }
 
     // Process flows serially, emails within each flow in parallel
