@@ -245,7 +245,10 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
   };
 
   const openPurchaseModal = (group: FlowGroup) => {
-    if (!group.analysisId) return;
+    if (!group.analysisId) {
+      alert("These templates need to be regenerated to enable purchasing. Please analyze your brand again and regenerate the flows.");
+      return;
+    }
     setPurchaseModal({
       flowId: group.flowId,
       flowName: group.flowName,
@@ -495,14 +498,32 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
 
         {/* Upgrade CTA for free users */}
         {!hasPaid && flowGroups.length > 0 && (
-          <div className="mt-8 bg-gradient-to-r from-mint-50 to-green-50 border-2 border-mint-200 rounded-xl p-8 text-center">
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Your templates are ready to export</h3>
-            <p className="text-gray-600 mb-4">
+          <div className="mt-8 bg-gradient-to-r from-mint-50 to-green-50 border-2 border-mint-200 rounded-xl p-8">
+            <h3 className="text-xl font-bold text-gray-900 mb-2 text-center">Your templates are ready to export</h3>
+            <p className="text-gray-600 mb-6 text-center">
               Purchase access to download, copy, and push templates to your email platform.
             </p>
-            <a href="/#pricing" className="inline-block bg-mint-600 text-white font-semibold px-8 py-3 rounded-lg hover:bg-mint-700 transition-colors">
-              View Pricing
-            </a>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto">
+              <div className="bg-white rounded-lg p-4 border border-gray-200 text-center">
+                <div className="text-2xl font-bold text-gray-900">$29</div>
+                <div className="text-sm text-gray-500 mb-2">Single Flow</div>
+                <div className="text-xs text-gray-400">Export 1 flow for this brand</div>
+              </div>
+              <div className="bg-white rounded-lg p-4 border-2 border-mint-400 text-center relative">
+                <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-bold text-mint-600 bg-mint-100 px-2 py-0.5 rounded-full">BEST VALUE</span>
+                <div className="text-2xl font-bold text-gray-900">$79</div>
+                <div className="text-sm text-gray-500 mb-2">Full Campaign</div>
+                <div className="text-xs text-gray-400">All flows for this brand</div>
+              </div>
+              <div className="bg-white rounded-lg p-4 border border-gray-200 text-center">
+                <div className="text-2xl font-bold text-gray-900">$149<span className="text-sm font-normal">/mo</span></div>
+                <div className="text-sm text-gray-500 mb-2">Unlimited</div>
+                <div className="text-xs text-gray-400">Unlimited brands & exports</div>
+              </div>
+            </div>
+            <div className="text-center mt-4">
+              <p className="text-xs text-gray-500">Click "Buy to export" on any flow above, or <a href="/#pricing" className="text-mint-600 hover:text-mint-700 font-medium">view full pricing details</a></p>
+            </div>
           </div>
         )}
       </main>

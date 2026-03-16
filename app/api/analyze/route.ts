@@ -6,7 +6,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { scrapeWebsite } from '@/app/services/scraper.service';
 import { analyzeBrand } from '@/app/services/brand-analysis.service';
-import { getSupabase } from '@/app/lib/supabase';
+import { createAdminClient } from '@/app/lib/supabase/admin';
+import { createClient } from '@/app/lib/supabase/server';
 
 export const maxDuration = 60; // 60 second timeout for scraping + analysis
 
@@ -62,16 +63,28 @@ export async function POST(request: NextRequest) {
     console.log('🧠 Analyzing brand...');
     const brandAnalysis = await analyzeBrand(scrapedData);
 
-    // Step 3: Save to database
+    // Step 3: Save to database (use admin client to bypass RLS)
     console.log('💾 Saving to database...');
     let saved: any = null;
     let saveError: any = null;
+
+    // Check if user is logged in to associate analysis with their account
+    let userId: string | null = null;
     try {
-      const supabase = getSupabase();
-      const result = await supabase
+      const authClient = await createClient();
+      const { data: { user } } = await authClient.auth.getUser();
+      userId = user?.id || null;
+    } catch {
+      // Not logged in, that's fine
+    }
+
+    try {
+      const admin = createAdminClient();
+      const result = await admin
       .from('brand_analyses')
       .upsert({
         url: validatedUrl.href,
+        user_id: userId,
         analysis: brandAnalysis,
         scraped_content: {
           siteName: scrapedData.siteName,
@@ -93,11 +106,11 @@ export async function POST(request: NextRequest) {
       saved = result.data;
       saveError = result.error;
     } catch (dbError) {
-      console.warn('Database not configured, skipping save:', dbError);
+      console.warn('Database save failed:', dbError);
     }
 
     if (saveError) {
-      console.error('Database save error:', saveError);
+      console.error('Database save error:', JSON.stringify(saveError));
       // Continue anyway - we have the analysis
     }
 
