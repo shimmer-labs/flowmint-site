@@ -177,14 +177,16 @@ function ResultsPage() {
     setCopySuccess(false);
   };
 
+  const [batchError, setBatchError] = useState<string | null>(null);
+
   const handleGenerateAll = async () => {
     if (selectedFlows.size === 0) return;
     setBatchGenerating(true);
     setBatchComplete(false);
+    setBatchError(null);
     selectedFlows.forEach((flowId) => analytics.generateFlow(flowId));
 
     try {
-      // Check if user is logged in (we need userId for storage)
       const res = await fetch("/api/generate-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -199,7 +201,6 @@ function ResultsPage() {
 
       if (!res.ok) {
         const data = await res.json();
-        // If user not authenticated, we still generate but won't save
         if (res.status === 401) {
           throw new Error("Please sign in to generate and save your flows.");
         }
@@ -210,11 +211,24 @@ function ResultsPage() {
       setBatchJobId(data.jobId);
       setBatchProgress({ completed: 0, total: data.totalEmails, currentFlow: "" });
 
-      // Start polling
+      // Polling with timeout (5 minutes max)
+      const pollStartTime = Date.now();
+      const POLL_TIMEOUT_MS = 5 * 60 * 1000;
+      let consecutiveErrors = 0;
+
       pollRef.current = setInterval(async () => {
+        // Timeout check
+        if (Date.now() - pollStartTime > POLL_TIMEOUT_MS) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setBatchGenerating(false);
+          setBatchError("Generation timed out after 5 minutes. Some emails may still be processing — check your Templates page.");
+          return;
+        }
+
         try {
           const statusRes = await fetch(`/api/generation-status?jobId=${data.jobId}`);
           const status = await statusRes.json();
+          consecutiveErrors = 0;
 
           setBatchProgress({
             completed: status.completedEmails,
@@ -226,14 +240,28 @@ function ResultsPage() {
             if (pollRef.current) clearInterval(pollRef.current);
             setBatchComplete(true);
             setBatchGenerating(false);
+            if (status.status === "partial" && status.errors?.length > 0) {
+              setBatchError(`${status.errors.length} email(s) failed to generate. The rest are ready.`);
+            }
+          } else if (status.status === "failed") {
+            if (pollRef.current) clearInterval(pollRef.current);
+            setBatchGenerating(false);
+            const errorMsg = status.errors?.[0] || "Generation failed unexpectedly.";
+            setBatchError(errorMsg);
           }
         } catch {
-          // Polling error, continue
+          consecutiveErrors++;
+          // Give up after 5 consecutive polling errors
+          if (consecutiveErrors >= 5) {
+            if (pollRef.current) clearInterval(pollRef.current);
+            setBatchGenerating(false);
+            setBatchError("Lost connection to the server. Check your Templates page — some emails may have been saved.");
+          }
         }
       }, 2000);
     } catch (err: any) {
       setBatchGenerating(false);
-      alert(err.message || "Failed to start generation. Please try again.");
+      setBatchError(err.message || "Failed to start generation. Please try again.");
     }
   };
 
@@ -514,7 +542,40 @@ function ResultsPage() {
               {batchProgress.currentFlow && (
                 <p className="text-gray-600">Currently generating: <strong>{batchProgress.currentFlow}</strong></p>
               )}
-              <p className="text-sm text-gray-500 mt-2">This takes about 15-30 seconds per email</p>
+              <p className="text-sm text-gray-500 mt-2">All flows generate in parallel — usually under 2 minutes total</p>
+              <button
+                onClick={() => {
+                  if (pollRef.current) clearInterval(pollRef.current);
+                  setBatchGenerating(false);
+                  setBatchError("Generation cancelled. Some emails may have been saved — check your Templates page.");
+                }}
+                className="text-sm text-gray-400 hover:text-gray-600 mt-4 underline"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {batchError && !batchGenerating && (
+          <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-8 text-center mb-12">
+            <svg className="w-12 h-12 text-red-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <p className="text-red-700 font-medium mb-3">{batchError}</p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => { setBatchError(null); handleGenerateAll(); }}
+                className="bg-mint-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-mint-700 transition-colors"
+              >
+                Try Again
+              </button>
+              <a
+                href="/templates"
+                className="bg-white text-gray-700 font-medium py-2 px-6 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
+              >
+                Check Templates
+              </a>
             </div>
           </div>
         )}

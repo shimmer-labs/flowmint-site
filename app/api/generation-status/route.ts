@@ -1,6 +1,7 @@
 /**
  * API Route: Generation Status
  * Poll for generation job progress
+ * Now includes error information and "failed" status
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,7 +14,10 @@ export async function GET(request: NextRequest) {
   const jobId = request.nextUrl.searchParams.get("jobId");
 
   if (!jobId) {
-    return NextResponse.json({ error: "Missing jobId parameter" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing jobId parameter" },
+      { status: 400 }
+    );
   }
 
   const supabase = createAdminClient();
@@ -38,5 +42,6 @@ export async function GET(request: NextRequest) {
     totalFlows: job.total_flows || null,
     flowId: job.flow_id,
     flowName: job.flow_name,
+    errors: job.errors || null,
   });
 }

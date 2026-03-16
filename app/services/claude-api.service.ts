@@ -1,10 +1,13 @@
 /**
  * Claude API Service
- * Ported directly from ottomate - handles all Claude API interactions
+ * Handles all Claude API interactions with timeout and retry
  */
 
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
 const CLAUDE_MODEL = "claude-sonnet-4-20250514";
+
+/** Timeout for AI generation calls (90 seconds - Sonnet 4 can be slow under load) */
+const AI_TIMEOUT_MS = 90_000;
 
 export interface ClaudeMessage {
   role: "user" | "assistant";
@@ -22,7 +25,7 @@ export interface ClaudeResponse {
 }
 
 /**
- * Call Claude API with a prompt
+ * Call Claude API with a prompt (includes timeout)
  */
 export async function callClaude(
   prompt: string,
@@ -38,23 +41,27 @@ export async function callClaude(
     systemPrompt,
   } = options;
 
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY not found in environment variables");
+  }
+
+  const body: any = {
+    model: CLAUDE_MODEL,
+    max_tokens: maxTokens,
+    temperature,
+    messages: [{ role: "user", content: prompt }],
+  };
+
+  if (systemPrompt) {
+    body.system = systemPrompt;
+  }
+
+  // Use AbortController for timeout (matches Shopify app pattern)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error("ANTHROPIC_API_KEY not found in environment variables");
-    }
-
-    const body: any = {
-      model: CLAUDE_MODEL,
-      max_tokens: maxTokens,
-      temperature,
-      messages: [{ role: "user", content: prompt }],
-    };
-
-    if (systemPrompt) {
-      body.system = systemPrompt;
-    }
-
     const response = await fetch(CLAUDE_API_URL, {
       method: "POST",
       headers: {
@@ -63,7 +70,10 @@ export async function callClaude(
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -83,10 +93,16 @@ export async function callClaude(
     const text = data.content[0].text;
 
     // Log token usage
-    console.log(`✅ Claude API call completed - Input: ${data.usage.input_tokens}, Output: ${data.usage.output_tokens}`);
+    console.log(`✅ Claude: ${data.usage.input_tokens}in/${data.usage.output_tokens}out tokens`);
 
     return text;
   } catch (error) {
+    clearTimeout(timeoutId);
+
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Claude API timeout after ${AI_TIMEOUT_MS / 1000}s`);
+    }
+
     console.error("❌ Claude API call failed:", error);
     throw error;
   }

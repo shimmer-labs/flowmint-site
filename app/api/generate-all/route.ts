@@ -1,10 +1,19 @@
 /**
  * API Route: Generate All Flows
- * Generates all selected flows serially (emails within each flow in parallel)
+ * Generates ALL selected flows in parallel (with concurrency limit)
  * Returns a master job ID for polling
+ *
+ * Architecture:
+ * - Returns jobId immediately
+ * - Uses after() to process in background
+ * - All flows run in parallel (max 5 concurrent Claude calls)
+ * - Each email has retry logic (1 retry with 2s delay)
+ * - Progress updates after each email completes
+ * - Job marked "failed" if background task crashes
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { generateEmail } from "@/app/services/email-generator.service";
 import { getFlowDefinition } from "@/app/utils/flow-mappings";
 import { createAdminClient } from "@/app/lib/supabase/admin";
@@ -14,21 +23,37 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+/** Max concurrent Claude API calls to avoid rate limits */
+const MAX_CONCURRENCY = 5;
+
 export async function POST(request: NextRequest) {
   try {
-    // Auth check — need userId to save templates
+    // Auth check
     const authClient = await createClient();
-    const { data: { user } } = await authClient.auth.getUser();
+    const {
+      data: { user },
+    } = await authClient.auth.getUser();
     if (!user) {
-      return NextResponse.json({ error: "Please sign in to generate flows" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Please sign in to generate flows" },
+        { status: 401 }
+      );
     }
     const userId = user.id;
 
     const body = await request.json();
-    const { flowIds, brandAnalysis, platform = "klaviyo", format = "html", analysisId: rawAnalysisId } = body;
-    // Only use analysisId if it's a valid UUID (temp IDs from anonymous analysis aren't)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const analysisId = rawAnalysisId && uuidRegex.test(rawAnalysisId) ? rawAnalysisId : null;
+    const {
+      flowIds,
+      brandAnalysis,
+      platform = "klaviyo",
+      format = "html",
+      analysisId: rawAnalysisId,
+    } = body;
+
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const analysisId =
+      rawAnalysisId && uuidRegex.test(rawAnalysisId) ? rawAnalysisId : null;
 
     if (!flowIds?.length || !brandAnalysis) {
       return NextResponse.json(
@@ -39,16 +64,18 @@ export async function POST(request: NextRequest) {
 
     const admin = createAdminClient();
 
-    // Calculate total emails across all flows
-    let totalEmails = 0;
     const validFlows = flowIds
       .map((id: string) => getFlowDefinition(id))
       .filter(Boolean);
 
     if (validFlows.length === 0) {
-      return NextResponse.json({ error: "No valid flow IDs provided" }, { status: 400 });
+      return NextResponse.json(
+        { error: "No valid flow IDs provided" },
+        { status: 400 }
+      );
     }
 
+    let totalEmails = 0;
     for (const flow of validFlows) {
       totalEmails += flow.emailCount;
     }
@@ -72,44 +99,56 @@ export async function POST(request: NextRequest) {
 
     if (jobError) {
       console.error("Failed to create master job:", JSON.stringify(jobError));
-      return NextResponse.json({ error: "Failed to create generation job" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Failed to create generation job" },
+        { status: 500 }
+      );
     }
 
-    // Process flows serially, emails within each flow in parallel
-    // Run in background — don't await (client polls for status)
-    (async () => {
-      let completedTotal = 0;
-      let currentFlowIndex = 0;
+    // Process all flows in parallel (with concurrency limit)
+    after(async () => {
+      try {
+        // Build a flat list of all email generation tasks
+        const tasks: Array<{
+          flow: (typeof validFlows)[0];
+          emailNumber: number;
+        }> = [];
 
-      for (const flow of validFlows) {
-        currentFlowIndex++;
+        for (const flow of validFlows) {
+          for (let i = 1; i <= flow.emailCount; i++) {
+            tasks.push({ flow, emailNumber: i });
+          }
+        }
 
-        // Update job with current flow info
-        await admin
-          .from("generation_jobs")
-          .update({
-            current_flow: flow.name,
-            current_flow_index: currentFlowIndex,
-            total_flows: validFlows.length,
-          })
-          .eq("id", masterJob.id);
+        let completedCount = 0;
+        let failedCount = 0;
+        const errors: string[] = [];
 
-        // Generate all emails in this flow in parallel
-        const emailPromises = Array.from({ length: flow.emailCount }, (_, i) =>
-          generateEmail({
-            flow,
-            emailNumber: i + 1,
-            brandAnalysis,
-            platform,
-            format,
-          })
-            .then(async (email) => {
+        // Process with concurrency limit
+        const results = await runWithConcurrency(
+          tasks,
+          async (task) => {
+            const email = await generateEmail({
+              flow: task.flow,
+              emailNumber: task.emailNumber,
+              brandAnalysis,
+              platform,
+              format,
+            });
+
+            if (email.failed) {
+              failedCount++;
+              errors.push(
+                `${task.flow.name} #${task.emailNumber}: ${email.error}`
+              );
+            } else {
+              // Save to database
               await admin.from("email_templates").insert({
                 user_id: userId,
                 job_id: masterJob.id,
-                flow_id: flow.id,
-                flow_name: flow.name,
-                email_number: i + 1,
+                flow_id: task.flow.id,
+                flow_name: task.flow.name,
+                email_number: task.emailNumber,
                 subject: email.subject,
                 preheader: email.preheader,
                 body: email.body,
@@ -117,33 +156,59 @@ export async function POST(request: NextRequest) {
                 format,
                 analysis_id: analysisId || null,
               });
-              return true;
-            })
-            .catch((err) => {
-              console.error(`Failed: ${flow.name} email #${i + 1}:`, err);
-              return false;
-            })
+            }
+
+            // Update progress after each email
+            completedCount++;
+            await admin
+              .from("generation_jobs")
+              .update({
+                completed_emails: completedCount,
+                current_flow: task.flow.name,
+              })
+              .eq("id", masterJob.id);
+
+            return !email.failed;
+          },
+          MAX_CONCURRENCY
         );
 
-        const results = await Promise.all(emailPromises);
-        completedTotal += results.filter(Boolean).length;
+        // Determine final status
+        const successCount = results.filter(Boolean).length;
+        let status: string;
+        if (successCount === totalEmails) {
+          status = "completed";
+        } else if (successCount > 0) {
+          status = "partial";
+        } else {
+          status = "failed";
+        }
 
         await admin
           .from("generation_jobs")
-          .update({ completed_emails: completedTotal })
+          .update({
+            status,
+            completed_emails: completedCount,
+            current_flow: null,
+            errors: errors.length > 0 ? errors : null,
+          })
+          .eq("id", masterJob.id);
+
+        console.log(
+          `✅ Generation job ${masterJob.id}: ${status} (${successCount}/${totalEmails} emails, ${failedCount} failed)`
+        );
+      } catch (error: any) {
+        console.error("Background generation crashed:", error);
+        await admin
+          .from("generation_jobs")
+          .update({
+            status: "failed",
+            current_flow: null,
+            errors: [error.message || "Background task crashed unexpectedly"],
+          })
           .eq("id", masterJob.id);
       }
-
-      // Mark complete
-      await admin
-        .from("generation_jobs")
-        .update({
-          status: completedTotal === totalEmails ? "completed" : "partial",
-          completed_emails: completedTotal,
-          current_flow: null,
-        })
-        .eq("id", masterJob.id);
-    })();
+    });
 
     return NextResponse.json({
       success: true,
@@ -158,4 +223,33 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Run async tasks with a concurrency limit
+ * Like Promise.all() but only runs N tasks at a time
+ */
+async function runWithConcurrency<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency: number
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await fn(items[index]);
+    }
+  }
+
+  // Spawn `concurrency` workers
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    () => worker()
+  );
+  await Promise.all(workers);
+
+  return results;
 }
