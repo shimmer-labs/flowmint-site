@@ -84,6 +84,7 @@ export async function POST(request: NextRequest) {
             subject: email.subject,
             preheader: email.preheader,
             body: email.body,
+            content: email.body,
             platform,
             format,
             analysis_id: analysisId || null,

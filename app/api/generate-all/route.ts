@@ -142,8 +142,8 @@ export async function POST(request: NextRequest) {
                 `${task.flow.name} #${task.emailNumber}: ${email.error}`
               );
             } else {
-              // Save to database
-              await admin.from("email_templates").insert({
+              // Save to database (content = legacy field, body = current)
+              const { error: insertError } = await admin.from("email_templates").insert({
                 user_id: userId,
                 job_id: masterJob.id,
                 flow_id: task.flow.id,
@@ -152,10 +152,14 @@ export async function POST(request: NextRequest) {
                 subject: email.subject,
                 preheader: email.preheader,
                 body: email.body,
+                content: email.body,
                 platform,
                 format,
                 analysis_id: analysisId || null,
               });
+              if (insertError) {
+                throw new Error(`DB insert failed: ${insertError.message}`);
+              }
             }
 
             // Update progress after each email
