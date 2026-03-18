@@ -1,0 +1,21 @@
+# FlowMint
+
+> AI email marketing tool that generates personalized email campaigns for any brand in minutes.
+
+FlowMint analyzes your website, understands your brand voice, colors, and products, then generates 18+ email marketing flows ready to export or push to your email platform. Works with Klaviyo, Mailchimp, ActiveCampaign, GetResponse, Customer.io, OmniSend, and Shopify Email. No Shopify required — works with any website. Built by Shimmer Labs.
+
+## Features
+- [Home](https://flowmint.me): Enter any URL, get AI-generated email campaigns in minutes
+- [Pricing](https://flowmint.me/#pricing): Free to analyze and preview. Single Flow $29, Full Campaign $79, Unlimited $149/mo
+- [Support](https://flowmint.me/support): Help and FAQ
+
+## How It Works
+1. Enter your website URL
+2. AI analyzes your brand (voice, colors, products, audience)
+3. Generate 18+ email flow types (welcome, abandoned cart, win-back, etc.)
+4. Export or push directly to your email platform
+
+## About
+- Built by [Shimmer Labs](https://shimmerlabs.co): Custom software agency in Stillwater, OK
+- Works with any website (Shopify, WooCommerce, Squarespace, custom)
+- Powered by Claude AI for natural, on-brand copy
