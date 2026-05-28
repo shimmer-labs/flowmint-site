@@ -31,3 +31,6 @@ yarn-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# playwright-mcp ephemeral artifacts (snapshot YAMLs from the MCP browser)
+.playwright-mcp/

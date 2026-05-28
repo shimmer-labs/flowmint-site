@@ -1,0 +1,9 @@
+# Baseline eval URLs for Slice 3 of references/flowmintv2ghl/plan.md
+# Logan's beta cohort lean: heavy on local service businesses (highest misclassification risk).
+# Lines starting with # are ignored.
+
+https://joshdeanphotography.com/
+https://outbackrestorationandroofing.com/
+https://goldenoaklawn.com/
+https://empirefence.net/
+https://mintdetail.com/

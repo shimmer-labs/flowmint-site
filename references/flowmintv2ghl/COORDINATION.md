@@ -1,0 +1,108 @@
+# COORDINATION.md
+
+Cross-session state. Read this at the start of every session. Update it at the end of every session. Memory survives session boundaries because it lives here, not in chat history.
+
+---
+
+## Current phase
+
+CRAWL (see `references/flowmintv2ghl/PRODUCT_BRIEF.md`). Orientation complete. Pre-build.
+
+## Decisions made
+
+- Extend the existing FlowMint codebase in place to add GHL as an integration. No separate project, no FlowMint crawl/map step. The Claude Code session runs in the FlowMint directory.
+- The product shape is template-generation-and-push, with manual human wiring of workflows inside GHL. The GHL API cannot create or edit workflows (confirmed).
+- We will run AI evals on the email-generation step to measure and optimize generation speed, alongside the GHL build.
+- The reference docs (CLAUDE.md, PRODUCT_BRIEF.md, plan.md, COORDINATION.md, ghl-api-reference.md, SKILL.md files) live under `references/flowmintv2ghl/`, not at the repo root. There is already a comprehensive `CLAUDE.md` at the repo root for flowmint-site; the GHL brief is namespaced under references on purpose.
+- `~/flowmint` (the Shopify app) is a quarry, not a dependency. Nothing from it is needed to ship the CRAWL GHL slice. Its `flow-mappings.ts` and `prompt-builder.service.ts` are tempting future ports for quality, not blockers.
+- Architecture section of `references/flowmintv2ghl/CLAUDE.md` is filled in. Where generation lives, how it is invoked, config and secrets, build/lint commands, and the cross-project relationship are all documented there.
+
+## Decisions made this session (cont'd)
+
+- AUTH MODEL LOCKED: **private OAuth app**, build from day one. Stays unlisted through CRAWL and WALK; flip to public + marketplace at RUN. Per-location access/refresh tokens stored in Supabase; refresh-on-401 wrapper. No PIT code.
+- PATH HOUSEKEEPING DONE: all internal references inside `references/flowmintv2ghl/` now point to `references/flowmintv2ghl/<file>` instead of imaginary `docs/...` paths. Verified `grep` returns no stale `docs/ghl-api-reference` references.
+- SKILL HOUSEKEEPING DONE: both skills now live at `flowmint-site/.claude/skills/ghl-merge-field-generator/SKILL.md` and `flowmint-site/.claude/skills/ghl-template-push/SKILL.md`. The old `references/flowmintv2ghl/SKILL.md` and the `mnt/user-data/outputs/...` nesting are deleted.
+- ROADMAP DISCIPLINE: `plan.md` is alive. Items get checked off as they ship; asides get parked in the Parking lot section the moment they're said; the lot is re-ranked against CRAWL/WALK/RUN. Pilot cohort is Reed + 2 office beta testers; we prioritize for "testable in someone else's hands" until they have it.
+
+## Open decisions (not yet made)
+
+(none currently blocking)
+
+## Findings from orientation (March 2026)
+
+### Architecture (full detail in `references/flowmintv2ghl/CLAUDE.md`)
+- Next.js 15, TS, Supabase, Stripe, Anthropic Claude Sonnet 4 via raw `fetch` (no SDK).
+- Generation: `app/services/email-generator.service.ts` → `app/services/claude-api.service.ts`. Retries once after 2 s. 90 s timeout.
+- Invocation: `POST /api/generate-{email,flow,all}`. The `generate-all` route is the production path: async via Next.js `after()`, 5 concurrent emails, polled by `/api/generation-status`.
+- Push seam for GHL: `app/api/push-to-platform/route.ts` dispatch + a new `ghl` entry in `app/utils/platform-syntax.ts`.
+- No tests. `npm run build` is the only typecheck. The eval workstream will need its own harness.
+
+### Reuse verdict on ~/flowmint: REUSE PARTS LATER, IGNORE FOR NOW
+- Not needed for CRAWL.
+- Future port candidates: the richer `flow-mappings.ts`, `prompt-builder.service.ts`, the GetResponse + Shopify Email syntax blocks, `validateApiKey()`.
+- Skip entirely: Prisma layer, React Router scaffold, Shopify-specific billing and OAuth code.
+- No filesystem coupling; deleting `~/flowmint` would not break flowmint-site.
+
+### Cross-sync risks (full detail in the session report)
+- Highest-risk drift surfaces today: `flow-mappings.ts` (862 vs 128 lines) and `platform-syntax.ts` (6 platforms + validator vs 5 platforms, no validator).
+- Lower-risk drift: Claude API wrapper, email generator orchestration, BrandAnalysisResult shape, GeneratedEmail `body` vs `content`. None of these are blocking GHL.
+- For GHL specifically: maintain the GHL platform entry in flowmint-site only. Do not back-port to `~/flowmint`. Treat flowmint-site as the new source of truth going forward.
+
+## Current phase checklist
+
+- [x] Run `/init` and fill in the architecture section of CLAUDE.md.
+- [x] Locate FlowMint's AI generation step and document where it lives.
+- [x] Make the auth-model decision and record it here. → **private OAuth app.**
+- [x] Patch path references inside `references/flowmintv2ghl/`.
+- [x] Move SKILL.md files into a real `.claude/skills/` directory so both skills register.
+- [x] Draft the Phase 0 plan in `references/flowmintv2ghl/plan.md`.
+- [x] Slice 3 baseline measured (see Eval results log below).
+- [x] Slice 1 plan annotation cycle (one round).
+- [x] **Slice 1 OAuth code written and building cleanly.** Migration, install/callback routes, lib/ghl helpers. Pending: manual install verification on Logan's test sub-account (requires migration applied + dev server).
+
+## Next steps (in order)
+
+1. Migration ✅ applied. App profile/version/pricing ✅ filled in (resolved `noAppVersionIdFound`). Marketplace install attempt on shimmerlabs sub-account → GHL generated a real OAuth `code` and sent it to `https://flowmint.me/api/integrations/callback?code=...`. Production 404'd because the new routes haven't been deployed yet. Code is burned.
+2. **Logan (Vercel):** add to project env vars: `GHL_CLIENT_ID`, `GHL_CLIENT_SECRET`, `GHL_REDIRECT_URI=https://flowmint.me/api/integrations/callback` (prod value, NOT localhost), `GHL_OAUTH_SCOPES`, `OAUTH_STATE_SECRET`. Without these prod will throw at runtime.
+3. **Logan (git):** commit + push to main. Vercel auto-deploys. Confirm build succeeds in Vercel before retrying install.
+4. **Logan (GHL):** uninstall FlowMint from shimmerlabs sub-account (the current install has no token on our side; dead weight). Then re-trigger install via FlowMint's own route: `https://flowmint.me/api/integrations/install?provider=ghl`, signed in to FlowMint in the same browser. **Do not use the marketplace UI install button** — that path sends no state and our callback rejects it (state-less marketplace installs are parked as WALK).
+5. **Verify:** run `npx tsx --env-file=.env.local scripts/check-ghl-connections.ts`. Expect one row with valid token and future `expires_at`.
+6. Once verified: start Slice 2 (GHL platform entry in generator + em-dash fix + push-or-export UX flow).
+
+## Eval results log
+
+(Record baseline and each optimization here so it survives compaction.)
+
+### Baseline — 2026-05-28
+- **Model:** `claude-sonnet-4-20250514` (Sonnet 4) via raw `fetch`. No prompt caching, no batching.
+- **Inputs:** 5 URLs (Logan's beta cohort): joshdeanphotography, outbackrestorationandroofing, goldenoaklawn, empirefence, mintdetail.
+- **Flow:** welcome (3 emails). Platform: klaviyo. Format: html.
+- **Latency (end-to-end per URL = scrape + analyze + 3 emails generated serially):**
+  - median 120.0s, range 92.8s–184.4s
+  - scrape: 10s–92s (highly variable; goldenoaklawn was 92s, mintdetail was 10s)
+  - analyze: 5–6s (consistent)
+  - per-email generation: median 26.9s, p95 33.2s
+- **Quality:**
+  - Em-dashes in 3/5 URLs. All instances were in email #2 of the welcome flow ("brand story" email). Counts: 1, 1, 2.
+  - Subject, preheader, body length, personalization: ✅ all passed across all 15 emails.
+  - Failed generations: 0.
+- **Classification spot-check:**
+  - joshdeanphotography → `photography-services` ✅ accurate
+  - outbackrestorationandroofing → `home-services-contractor` ✅ spot-on
+  - goldenoaklawn → `local-service-business` ⚠️ accurate but generic (didn't pick up "landscaping / lawn care" specifically)
+  - empirefence → `local-construction-services` ✅ accurate
+  - mintdetail → `mobile-service-business` ✅ accurate
+  - **No misclassifications.** None of the 5 service businesses got tagged as e-commerce / online retailer. The classification spot-check passes for this cohort.
+  - Open question for WALK: do the `recommendFlows(businessModel)` mappings return e-com-centric flows (cart-abandonment, browse-abandonment) for these classifications? If so, the analyzer is right but the flow library is wrong. To check during Slice 5 rehearsal.
+- **Observations / next levers:**
+  - Per-email gen at ~27s is the dominant cost; not the scrape. Optimization workstream should start with prompt caching of the stable brand-context prefix (it's identical across the 3 emails for one URL).
+  - Em-dash bug is small. One-line prompt fix in `email-generator.service.ts` ("Never use em dashes. Use commas, periods, or rewrites."). Surfaces in Slice 2 as part of the prompt rework anyway, but could land sooner.
+  - Variable scrape time (10s vs 92s) is a separate concern; parked.
+
+## Notes for the next session
+
+- Architecture section in `references/flowmintv2ghl/CLAUDE.md` is real, not a TODO. Re-read it before touching code.
+- Auth model is locked to private OAuth app. Do not write PIT code.
+- `plan.md` is alive. Check off items as they ship. Park asides immediately. Re-rank.
+- Pilot cohort = Reed + 2 office testers. Prioritize for "testable in someone else's hands."
+- Before writing OAuth code, run the plan.md annotation cycle on Slice 1 with Logan.
