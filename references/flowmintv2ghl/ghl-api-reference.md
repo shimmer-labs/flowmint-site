@@ -21,7 +21,13 @@ Email templates (full CRUD) — verified endpoint shapes:
 - Update a template
 - Delete a template
 - Import a template from a provider URL
-- Create template folders (organization)
+- **Create template folder** (verified 2026-05-28):
+  - `POST https://services.leadconnectorhq.com/emails/public/v2/locations/{locationId}/templates/folders`
+  - Headers: `Version: 2023-02-21`
+  - Body: `{ name, userId? }`
+  - Response: `{ id, name, updatedAt, traceId }`
+  - On template create, include `parentFolderId: <folder.id>` to drop the template into that folder.
+  - **No public list-folders endpoint** exists in the V2 docs — can't dedupe on name alone. Cache folder IDs in our DB after creating.
 
 Email campaigns (V2, full lifecycle):
 - Create, update, delete a campaign

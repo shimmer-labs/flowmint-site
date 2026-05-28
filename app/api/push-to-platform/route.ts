@@ -222,12 +222,67 @@ async function pushToOmnisend(apiKey: string, template: any): Promise<string> {
 }
 
 /**
- * Push one template to GHL as a public V2 email template.
+ * Lazily ensure a "FlowMint" folder exists in the user's GHL location and
+ * return its ID. Caches the ID on the ghl_connections row so we only call
+ * GHL's create-folder endpoint once per location.
+ *
+ * GHL has no public list-folders endpoint, so this can't dedupe against a
+ * folder the user (or a previous probe) made manually. If the cached ID is
+ * stale (folder deleted from GHL UI), the push will fail; the user removes
+ * the cached ID by reconnecting the location in Settings.
+ */
+async function ensureFlowMintFolder(
+  userId: string,
+  locationId: string
+): Promise<string> {
+  const admin = createAdminClient();
+  const { data: conn, error: loadErr } = await admin
+    .from("ghl_connections")
+    .select("id, flowmint_folder_id")
+    .eq("user_id", userId)
+    .eq("location_id", locationId)
+    .maybeSingle();
+
+  if (loadErr) throw new Error(`load connection failed: ${loadErr.message}`);
+  if (!conn) throw new Error(`no connection for location ${locationId}`);
+  if (conn.flowmint_folder_id) return conn.flowmint_folder_id;
+
+  // No cached folder ID; create one and persist.
+  const createUrl = `https://services.leadconnectorhq.com/emails/public/v2/locations/${locationId}/templates/folders`;
+  const createRes = await ghlFetch(userId, locationId, createUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Version: "2023-02-21" },
+    body: JSON.stringify({ name: "FlowMint" }),
+  });
+
+  if (!createRes.ok) {
+    const text = await createRes.text().catch(() => "");
+    throw new Error(
+      `GHL create-folder failed (${createRes.status}): ${text.slice(0, 200)}`
+    );
+  }
+
+  const folder = await createRes.json().catch(() => ({}));
+  if (!folder.id) {
+    throw new Error("GHL create-folder response missing id field");
+  }
+
+  await admin
+    .from("ghl_connections")
+    .update({ flowmint_folder_id: folder.id })
+    .eq("id", conn.id);
+
+  return folder.id;
+}
+
+/**
+ * Push one template to GHL as a public V2 email template, into the location's
+ * FlowMint folder (created lazily on first push).
  *
  * Endpoint and shape from GHL's live docs (verified 2026-05-28):
  *   POST https://services.leadconnectorhq.com/emails/public/v2/locations/{locationId}/templates
  *   Headers: Version: 2023-02-21
- *   Body: { name, editorType: "html", editorContent: <html>, subjectLine, previewText }
+ *   Body: { name, editorType: "html", editorContent, subjectLine, previewText, parentFolderId }
  *   Response: { id, name, editorType, subjectLine, previewText, previewUrl, ... }
  *
  * Verified that previewUrl returns the exact HTML we sent (including merge
@@ -243,6 +298,7 @@ async function pushToGHL(
   locationId: string,
   template: any
 ): Promise<string> {
+  const parentFolderId = await ensureFlowMintFolder(userId, locationId);
   const name = `${template.flow_name} - Email ${template.email_number}: ${template.subject}`;
   const url = `https://services.leadconnectorhq.com/emails/public/v2/locations/${locationId}/templates`;
   const res = await ghlFetch(userId, locationId, url, {
@@ -258,6 +314,7 @@ async function pushToGHL(
       editorContent: template.body,
       subjectLine: template.subject || "",
       previewText: template.preheader || "",
+      parentFolderId,
     }),
   });
 
