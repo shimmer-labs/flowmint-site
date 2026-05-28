@@ -1,5 +1,6 @@
 import { ensureAuthenticated } from "@/app/lib/auth/protected";
 import { createClient } from "@/app/lib/supabase/server";
+import { createAdminClient } from "@/app/lib/supabase/admin";
 import { getUserPurchases, hasUnlimitedAccess } from "@/app/lib/plan-gating";
 import SettingsClient from "./SettingsClient";
 
@@ -27,6 +28,14 @@ export default async function SettingsPage() {
     .eq("user_id", user.id)
     .single();
 
+  // Fetch GHL connections (via admin client so we get a clean read regardless of RLS quirks)
+  const admin = createAdminClient();
+  const { data: ghlConnections } = await admin
+    .from("ghl_connections")
+    .select("id, location_id, location_label, auth_type, created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
   return (
     <SettingsClient
       user={{ email: user.email!, name: user.user_metadata?.full_name }}
@@ -36,6 +45,7 @@ export default async function SettingsPage() {
       unlimitedExpiresAt={profile?.unlimited_expires_at || null}
       currentPlatform={settings?.platform || ""}
       hasApiKey={!!settings?.api_key}
+      initialGhlConnections={ghlConnections || []}
     />
   );
 }

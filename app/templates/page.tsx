@@ -1,6 +1,7 @@
 import { ensureAuthenticated } from "@/app/lib/auth/protected";
 import { createClient } from "@/app/lib/supabase/server";
-import { getUserPurchases, hasUnlimitedAccess } from "@/app/lib/plan-gating";
+import { createAdminClient } from "@/app/lib/supabase/admin";
+import { getUserPurchases, hasUnlimitedAccess, isBetaOpenAccess } from "@/app/lib/plan-gating";
 import TemplatesClient from "./TemplatesClient";
 
 export default async function TemplatesPage() {
@@ -21,12 +22,22 @@ export default async function TemplatesPage() {
     hasUnlimitedAccess(user.id),
   ]);
 
+  // Fetch GHL connections (for the "Push to GHL" picker)
+  const admin = createAdminClient();
+  const { data: ghlConnections } = await admin
+    .from("ghl_connections")
+    .select("id, location_id, location_label")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
   return (
     <TemplatesClient
       user={{ email: user.email!, name: user.user_metadata?.full_name }}
       templates={templates || []}
       purchases={purchases}
       isUnlimited={isUnlimited}
+      ghlConnections={ghlConnections || []}
+      betaOpenAccess={isBetaOpenAccess()}
     />
   );
 }

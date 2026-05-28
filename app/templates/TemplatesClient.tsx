@@ -27,11 +27,19 @@ interface EmailTemplate {
   created_at: string;
 }
 
+interface GhlConnection {
+  id: string;
+  location_id: string;
+  location_label: string | null;
+}
+
 interface Props {
   user: { email: string; name?: string };
   templates: EmailTemplate[];
   purchases: Purchase[];
   isUnlimited: boolean;
+  ghlConnections: GhlConnection[];
+  betaOpenAccess: boolean;
 }
 
 interface FlowGroup {
@@ -42,7 +50,7 @@ interface FlowGroup {
   templates: EmailTemplate[];
 }
 
-export default function TemplatesClient({ user, templates, purchases, isUnlimited }: Props) {
+export default function TemplatesClient({ user, templates, purchases, isUnlimited, ghlConnections, betaOpenAccess }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { signOut } = useAuth();
@@ -70,6 +78,57 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
 
   // Purchase success toast
   const [showPurchaseToast, setShowPurchaseToast] = useState(false);
+
+  // Push-to-GHL state
+  const [ghlPushModal, setGhlPushModal] = useState<{
+    flowId: string;
+    flowName: string;
+    analysisId: string | null;
+    templateIds: string[];
+  } | null>(null);
+  const [ghlPushLocationId, setGhlPushLocationId] = useState<string>(
+    ghlConnections[0]?.location_id ?? ""
+  );
+  const [ghlPushing, setGhlPushing] = useState(false);
+  const [ghlPushError, setGhlPushError] = useState("");
+  const [ghlPushResult, setGhlPushResult] = useState<{
+    flowName: string;
+    pushed: number;
+    failed: number;
+  } | null>(null);
+
+  async function handlePushToGhl() {
+    if (!ghlPushModal || !ghlPushLocationId) return;
+    setGhlPushError("");
+    setGhlPushing(true);
+    try {
+      const res = await fetch("/api/push-to-platform", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: "ghl",
+          ghlLocationId: ghlPushLocationId,
+          templateIds: ghlPushModal.templateIds,
+          analysisId: ghlPushModal.analysisId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Push failed");
+      }
+      setGhlPushResult({
+        flowName: ghlPushModal.flowName,
+        pushed: data.pushed ?? 0,
+        failed: data.failed ?? 0,
+      });
+      setGhlPushModal(null);
+      setTimeout(() => setGhlPushResult(null), 8000);
+    } catch (err: any) {
+      setGhlPushError(err.message || "Push failed");
+    } finally {
+      setGhlPushing(false);
+    }
+  }
 
   useEffect(() => {
     analytics.viewTemplates(templates.length, 0);
@@ -288,6 +347,38 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-12">
+        {/* Beta-grace banner */}
+        {betaOpenAccess && (
+          <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-start gap-3">
+            <div className="text-amber-700 mt-0.5">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="flex-1 text-sm">
+              <div className="font-semibold text-amber-900">Beta access: push and export are free during testing.</div>
+              <div className="text-amber-800 mt-1">We&apos;re still figuring out pricing. Push as much as you want for now. We&apos;ll give you a heads up before any of this turns paid.</div>
+            </div>
+          </div>
+        )}
+
+        {/* GHL not connected banner */}
+        {flowGroups.length > 0 && ghlConnections.length === 0 && (
+          <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-start gap-3">
+            <div className="text-blue-700 mt-0.5">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="flex-1 text-sm">
+              <div className="font-semibold text-blue-900">No GHL location connected yet.</div>
+              <div className="text-blue-800 mt-1">
+                <a href="/settings" className="font-medium underline">Add one in Settings</a> and you&apos;ll be able to push templates straight into your GHL email-builder list.
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Your Templates</h1>
@@ -351,12 +442,39 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
                   </div>
                   <div className="flex items-center gap-3">
                     {canExport ? (
-                      <span
-                        onClick={(e) => { e.stopPropagation(); handleExportFlow(group); }}
-                        className="text-sm text-mint-600 hover:text-mint-700 font-medium cursor-pointer"
-                      >
-                        {exportingFlow === group.flowId ? "Exporting..." : "Download ZIP"}
-                      </span>
+                      <>
+                        {ghlConnections.length > 0 ? (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setGhlPushError("");
+                              setGhlPushModal({
+                                flowId: group.flowId,
+                                flowName: group.flowName,
+                                analysisId: group.analysisId,
+                                templateIds: group.templates.map((t) => t.id),
+                              });
+                            }}
+                            className="text-sm text-mint-600 hover:text-mint-700 font-medium cursor-pointer"
+                          >
+                            Push to GHL
+                          </span>
+                        ) : (
+                          <a
+                            href="/settings"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-sm text-gray-500 hover:text-mint-700 font-medium"
+                          >
+                            Connect GHL to push
+                          </a>
+                        )}
+                        <span
+                          onClick={(e) => { e.stopPropagation(); handleExportFlow(group); }}
+                          className="text-sm text-gray-600 hover:text-gray-900 font-medium cursor-pointer"
+                        >
+                          {exportingFlow === group.flowId ? "Exporting..." : "Download ZIP"}
+                        </span>
+                      </>
                     ) : (
                       <span
                         onClick={(e) => { e.stopPropagation(); openPurchaseModal(group); }}
@@ -609,6 +727,111 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
             <p className="text-xs text-gray-500 text-center mt-3">
               One-time payment. No subscription.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Push-to-GHL Modal */}
+      {ghlPushModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900">Push to GHL</h3>
+              <button
+                onClick={() => setGhlPushModal(null)}
+                className="text-gray-400 hover:text-gray-600"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-5">
+              Push <strong>{ghlPushModal.templateIds.length}</strong> email{ghlPushModal.templateIds.length !== 1 ? "s" : ""} from <strong>{ghlPushModal.flowName}</strong> into a connected GHL location. You&apos;ll wire them into a workflow inside GHL after.
+            </p>
+
+            {ghlConnections.length === 0 ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-900">
+                You don&apos;t have any connected GHL locations yet.{" "}
+                <a href="/settings" className="font-medium underline">
+                  Connect one in Settings
+                </a>
+                .
+              </div>
+            ) : (
+              <div className="mb-5">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Target location
+                </label>
+                <select
+                  value={ghlPushLocationId}
+                  onChange={(e) => setGhlPushLocationId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-mint-300 focus:border-mint-500"
+                >
+                  {ghlConnections.map((c) => (
+                    <option key={c.id} value={c.location_id}>
+                      {c.location_label || c.location_id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {ghlPushError && (
+              <p className="text-red-600 text-sm mb-4">{ghlPushError}</p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={handlePushToGhl}
+                disabled={ghlPushing || ghlConnections.length === 0 || !ghlPushLocationId}
+                className="flex-1 bg-mint-600 text-white font-medium py-3 rounded-lg hover:bg-mint-700 transition-colors disabled:opacity-50"
+              >
+                {ghlPushing ? "Pushing..." : "Push to GHL"}
+              </button>
+              <button
+                onClick={() => setGhlPushModal(null)}
+                className="px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 text-center mt-4">
+              Templates land in your GHL email-templates list. You wire them into a workflow manually inside GHL.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* GHL push success toast */}
+      {ghlPushResult && (
+        <div className="fixed bottom-6 right-6 z-50 bg-white border border-mint-200 shadow-lg rounded-xl p-4 max-w-sm">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-mint-100 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-mint-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <div className="font-medium text-gray-900 text-sm">
+                Pushed {ghlPushResult.pushed} of {ghlPushResult.pushed + ghlPushResult.failed}
+              </div>
+              <div className="text-xs text-gray-600 mt-1">
+                {ghlPushResult.flowName} now lives in your GHL email templates list. Next: wire them into a workflow inside GHL.
+              </div>
+            </div>
+            <button
+              onClick={() => setGhlPushResult(null)}
+              className="text-gray-400 hover:text-gray-600"
+              aria-label="Close"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
       )}

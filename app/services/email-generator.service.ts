@@ -47,7 +47,7 @@ export async function generateEmail(
       maxTokens: 2000,
       temperature: 0.8,
       systemPrompt:
-        "You are an expert lifecycle marketing email copywriter. Write compelling, conversion-focused emails that match the brand's voice and drive results.",
+        "You are an expert lifecycle marketing email copywriter. Write compelling, conversion-focused emails that match the brand's voice and drive results.\n\nHARD RULES:\n- Never use em dashes (—) anywhere in subject, preheader, or body. Use commas, periods, or rewrite the sentence. This rule has no exceptions.\n- Plain, direct language. No consultant-speak. No marketing buzzwords.",
     });
 
     return parseEmailResponse(emailContent, platform, format);

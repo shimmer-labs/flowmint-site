@@ -8,6 +8,7 @@ import { createClient } from "@/app/lib/supabase/server";
 import { createAdminClient } from "@/app/lib/supabase/admin";
 import { getUserPurchases, hasUnlimitedAccess, hasAnyPurchase } from "@/app/lib/plan-gating";
 import { canExportFlowClient } from "@/app/lib/plan-gating-client";
+import { ghlFetch } from "@/app/lib/ghl/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,11 +31,26 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { templateIds, platform, apiKey, analysisId } = body;
+    const { templateIds, platform, apiKey, analysisId, ghlLocationId } = body;
 
-    if (!templateIds?.length || !platform || !apiKey) {
+    if (!templateIds?.length || !platform) {
       return NextResponse.json(
-        { error: "Missing templateIds, platform, or apiKey" },
+        { error: "Missing templateIds or platform" },
+        { status: 400 }
+      );
+    }
+
+    // GHL uses a stored PIT/OAuth connection, not a request-body apiKey.
+    // Every other platform still needs an apiKey from the request.
+    if (platform !== "ghl" && !apiKey) {
+      return NextResponse.json(
+        { error: "Missing apiKey" },
+        { status: 400 }
+      );
+    }
+    if (platform === "ghl" && !ghlLocationId) {
+      return NextResponse.json(
+        { error: "Missing ghlLocationId (pick a connected GHL location)" },
         { status: 400 }
       );
     }
@@ -82,7 +98,10 @@ export async function POST(request: NextRequest) {
 
     for (const template of accessible) {
       try {
-        const platformId = await pushTemplate(platform, apiKey, template);
+        const platformId =
+          platform === "ghl"
+            ? await pushToGHL(user.id, ghlLocationId, template)
+            : await pushTemplate(platform, apiKey, template);
         results.push({
           templateId: template.id,
           success: true,
@@ -200,4 +219,63 @@ async function pushToCustomerIO(apiKey: string, template: any): Promise<string> 
 
 async function pushToOmnisend(apiKey: string, template: any): Promise<string> {
   throw new Error("Omnisend push coming soon — use ZIP export for now");
+}
+
+/**
+ * Push one template to GHL as a public V2 email template.
+ *
+ * Endpoint and shape from GHL's live docs (verified 2026-05-28):
+ *   POST https://services.leadconnectorhq.com/emails/public/v2/locations/{locationId}/templates
+ *   Headers: Version: 2023-02-21
+ *   Body: { name, editorType: "html", editorContent: <html>, subjectLine, previewText }
+ *   Response: { id, name, editorType, subjectLine, previewText, previewUrl, ... }
+ *
+ * Verified that previewUrl returns the exact HTML we sent (including merge
+ * fields with fallbacks), so this endpoint actually accepts raw HTML.
+ *
+ * NOTE: there is also a `POST /emails/builder` endpoint that returns 201 but
+ * silently drops the payload and creates a starter template. Do not use it.
+ *
+ * Returns the GHL template ID so the caller can surface it.
+ */
+async function pushToGHL(
+  userId: string,
+  locationId: string,
+  template: any
+): Promise<string> {
+  const name = `${template.flow_name} - Email ${template.email_number}: ${template.subject}`;
+  const url = `https://services.leadconnectorhq.com/emails/public/v2/locations/${locationId}/templates`;
+  const res = await ghlFetch(userId, locationId, url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      // This endpoint requires the newer Version header, not the default.
+      Version: "2023-02-21",
+    },
+    body: JSON.stringify({
+      name,
+      editorType: "html",
+      editorContent: template.body,
+      subjectLine: template.subject || "",
+      previewText: template.preheader || "",
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    if (res.status === 401) {
+      throw new Error(
+        "GHL rejected the token. Rotate or re-connect this GHL location in Settings."
+      );
+    }
+    if (res.status === 403) {
+      throw new Error(
+        "GHL token missing emails/builder.write scope. Edit the integration in GHL and re-add scopes."
+      );
+    }
+    throw new Error(`GHL push failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  return data.id || "";
 }

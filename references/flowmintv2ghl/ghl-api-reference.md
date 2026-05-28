@@ -10,9 +10,14 @@ Verified against GHL API V2 docs, May 2026. V1 reached end-of-support December 3
 
 ### CAN do via V2 API
 
-Email templates (full CRUD):
-- Create an email template
-- List templates by location
+Email templates (full CRUD) — verified endpoint shapes:
+- **Create:** `POST https://services.leadconnectorhq.com/emails/public/v2/locations/{locationId}/templates`
+  - Headers: `Version: 2023-02-21` (NOT the usual `2021-07-28`), `Authorization: Bearer <token>`
+  - Body: `{ name, editorType: "html"|"builder"|"text", editorContent: <html>, subjectLine, previewText, fromName?, fromEmail?, parentFolderId?, userId? }`
+  - Response: `{ id, name, editorType, isPlainText, subjectLine, previewText, previewUrl, createdAt, updatedAt, traceId }`
+  - The `previewUrl` in the response is a Firebase-hosted index.html with the rendered template. Fetch it to verify our HTML actually landed (silent-acceptance check).
+  - **Do NOT use `POST /emails/builder`** — it returns 201 but silently drops the payload and creates a starter template with GHL's default content. Distinct endpoint, same family name, completely different behaviour.
+- List templates by location (separate endpoint, requires `emails/builder.readonly` scope)
 - Update a template
 - Delete a template
 - Import a template from a provider URL

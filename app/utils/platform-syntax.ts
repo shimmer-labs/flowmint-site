@@ -108,6 +108,30 @@ export const PLATFORMS: Record<string, PlatformDefinition> = {
     },
     supportsHTML: true,
   },
+  ghl: {
+    id: "ghl",
+    name: "GoHighLevel",
+    syntax: {
+      // GHL: double-curly, lowercase, fallback via `|| "fallback"`. Merge fields
+      // fail silently if syntax is off, so always emit a fallback on contact fields.
+      firstName: '{{contact.first_name || "there"}}',
+      lastName: '{{contact.last_name || ""}}',
+      email: "{{contact.email}}",
+      customField: (fieldName: string) => `{{contact.custom.${fieldName}}}`,
+      conditional: {
+        // GHL email accepts Liquid; SMS does not. Per the ghl-merge-field-generator
+        // skill, prefer the `||` fallback inline rather than `{% if %}` blocks.
+        if: "{% if contact.first_name %}",
+        else: "{% else %}",
+        endif: "{% endif %}",
+      },
+      // VERIFY: GHL's built-in unsubscribe variable in V2 email templates.
+      // If a custom unsubscribe link is needed, switch to a Custom Value:
+      // {{custom_values.unsubscribe_url}}.
+      unsubscribe: "{{message.unsubscribe_url}}",
+    },
+    supportsHTML: true,
+  },
 };
 
 /**
@@ -116,7 +140,7 @@ export const PLATFORMS: Record<string, PlatformDefinition> = {
 export function getSyntaxInstructions(platformId: string): string {
   const platform = PLATFORMS[platformId] || PLATFORMS.klaviyo;
 
-  return `
+  const base = `
 **Platform:** ${platform.name}
 
 **Required Personalization Syntax:**
@@ -138,6 +162,31 @@ IMPORTANT:
 - Always include unsubscribe link in footer
 - Use first name conditional to show "Hi [Name]" or fallback to "Hi there"
 `;
+
+  // GHL needs the merge-field generator rules baked into the prompt because
+  // merge fields fail silently in GHL. See .claude/skills/ghl-merge-field-generator.
+  if (platformId === "ghl") {
+    return (
+      base +
+      `
+**GHL MERGE-FIELD RULES (critical, applies to every dynamic field in this email):**
+
+1. Double curly braces, lowercase, underscores not spaces: \`{{contact.first_name}}\`.
+2. **Always emit a fallback** on any personalization field using the double-pipe operator: \`{{contact.first_name || "there"}}\`. Blank-name sends are the #1 failure mode in GHL. No exceptions.
+3. Use **Custom Values** for stable business data (company name, booking URL, office phone, standard offer name): \`{{custom_values.booking_url}}\`, \`{{custom_values.company_name}}\`. Never hardcode a phone number, booking link, or company name into copy. Invent custom_values keys as needed based on what the copy requires.
+4. Use **Custom Fields** only for genuinely per-contact data: \`{{contact.custom.field_key}}\`.
+5. **No em dashes** anywhere in subject, preheader, or body. Use a comma, a period, or a rewrite. This is brand voice, not optional.
+
+Self-check before output:
+- Every personalization field has a \`||\` fallback?
+- All field paths lowercase and underscore-style?
+- Stable business data expressed as \`{{custom_values.*}}\`, not hardcoded?
+- Zero em dashes?
+`
+    );
+  }
+
+  return base;
 }
 
 /**

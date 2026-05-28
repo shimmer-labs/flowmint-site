@@ -2,29 +2,41 @@
  * Authenticated GHL fetch wrapper.
  *
  * Loads a user's ghl_connections row for the target location, attaches the
- * access token, calls the GHL API. On 401, refreshes the token, persists the
- * new token, and retries the request once.
+ * bearer token, calls the GHL API.
  *
- * Used by the push-to-platform route (Slice 4) and any future GHL API caller.
+ * Two auth modes coexist:
+ *   - PIT (auth_type='pit'): static token, no refresh. expires_at is null.
+ *     On 401 we surface the error (the user must rotate the token in GHL).
+ *   - OAuth (auth_type='oauth'): refreshes proactively when expires_at is near,
+ *     and reactively on 401. CRAWL doesn't exercise this path; code stays
+ *     on-shelf for RUN. See references/flowmintv2ghl/plan.md.
+ *
+ * Used by app/api/push-to-platform/route.ts (Slice 4) and any future GHL caller.
  * Do NOT call GHL fetch directly elsewhere; always go through this.
  */
 
 import { createAdminClient } from "@/app/lib/supabase/admin";
 import { refreshAccessToken } from "./oauth";
 
-/** Skew window: refresh proactively if the token expires within this many ms. */
+/** Skew window: refresh OAuth tokens proactively if they expire within this many ms. */
 const REFRESH_SKEW_MS = 60_000;
 
-/** GHL Version header pinned for V2 endpoints. VERIFY against latest GHL docs. */
-const GHL_API_VERSION = "2021-07-28";
+/**
+ * Default GHL Version header. Most V2 endpoints use 2021-07-28, but a few newer
+ * surfaces (e.g. `emails/public/v2/...`) require 2023-02-21. Callers can override
+ * by setting their own `Version` header in `init.headers`; this default only
+ * applies when the caller didn't specify one.
+ */
+const GHL_API_VERSION_DEFAULT = "2021-07-28";
 
 interface GhlConnectionRow {
   id: string;
   user_id: string;
   location_id: string;
+  auth_type: "oauth" | "pit";
   access_token: string;
-  refresh_token: string;
-  expires_at: string; // ISO string
+  refresh_token: string | null;
+  expires_at: string | null; // ISO string; null for PIT rows
   scopes: string;
 }
 
@@ -77,6 +89,11 @@ async function persistRefreshedToken(
 async function refreshAndPersist(
   conn: GhlConnectionRow
 ): Promise<GhlConnectionRow> {
+  if (!conn.refresh_token) {
+    throw new Error(
+      `cannot refresh: connection ${conn.id} has no refresh_token (auth_type=${conn.auth_type})`
+    );
+  }
   const fresh = await refreshAccessToken(conn.refresh_token);
   await persistRefreshedToken(
     conn.id,
@@ -94,12 +111,20 @@ async function refreshAndPersist(
   };
 }
 
+function isExpiringSoon(conn: GhlConnectionRow): boolean {
+  // PIT tokens have null expires_at; we don't refresh them.
+  if (!conn.expires_at) return false;
+  return Date.parse(conn.expires_at) - Date.now() < REFRESH_SKEW_MS;
+}
+
 /**
  * Fetch a GHL V2 endpoint with the user's per-location access token.
  *
- * Refreshes proactively if expiry is within REFRESH_SKEW_MS, and reactively on 401.
- * The first 401 triggers a refresh + retry. A second 401 surfaces as an error;
- * we do not loop.
+ * OAuth path: refreshes proactively if expiry is within REFRESH_SKEW_MS,
+ * and reactively on 401 (single retry).
+ *
+ * PIT path: no refresh. 401 surfaces directly — the user must rotate the
+ * token in GHL and update FlowMint's stored value.
  */
 export async function ghlFetch(
   userId: string,
@@ -109,16 +134,18 @@ export async function ghlFetch(
 ): Promise<Response> {
   let conn = await loadConnection(userId, locationId);
 
-  // Proactive refresh: if token expires soon, refresh before sending.
-  if (
-    Date.parse(conn.expires_at) - Date.now() < REFRESH_SKEW_MS
-  ) {
+  // Proactive refresh (OAuth only; PITs skip this path).
+  if (conn.auth_type === "oauth" && isExpiringSoon(conn)) {
     conn = await refreshAndPersist(conn);
   }
 
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${conn.access_token}`);
-  headers.set("Version", GHL_API_VERSION);
+  // Only set the default Version if the caller didn't specify one.
+  // Different GHL endpoints require different Version values (e.g. emails/public/v2/* uses 2023-02-21).
+  if (!headers.has("Version")) {
+    headers.set("Version", GHL_API_VERSION_DEFAULT);
+  }
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
   }
@@ -129,7 +156,11 @@ export async function ghlFetch(
     return res;
   }
 
-  // Reactive refresh path: token rejected, try once more.
+  // Reactive refresh path: only OAuth can recover. PITs surface the 401 as-is.
+  if (conn.auth_type !== "oauth") {
+    return res;
+  }
+
   conn = await refreshAndPersist(conn);
   headers.set("Authorization", `Bearer ${conn.access_token}`);
   res = await fetch(url, { ...init, headers });

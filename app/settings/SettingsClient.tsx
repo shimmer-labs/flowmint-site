@@ -14,6 +14,14 @@ const PLATFORMS = [
   { id: "omnisend", name: "Omnisend", keyLabel: "API Key" },
 ];
 
+interface GhlConnection {
+  id: string;
+  location_id: string;
+  location_label: string | null;
+  auth_type: "oauth" | "pit";
+  created_at: string;
+}
+
 interface Props {
   user: { email: string; name?: string };
   purchases: Purchase[];
@@ -22,6 +30,7 @@ interface Props {
   unlimitedExpiresAt: string | null;
   currentPlatform: string;
   hasApiKey: boolean;
+  initialGhlConnections: GhlConnection[];
 }
 
 export default function SettingsClient({
@@ -32,6 +41,7 @@ export default function SettingsClient({
   unlimitedExpiresAt,
   currentPlatform,
   hasApiKey,
+  initialGhlConnections,
 }: Props) {
   const router = useRouter();
   const { signOut } = useAuth();
@@ -41,6 +51,78 @@ export default function SettingsClient({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState("");
   const [portalLoading, setPortalLoading] = useState(false);
+
+  // GHL connections state
+  const [ghlConnections, setGhlConnections] = useState<GhlConnection[]>(initialGhlConnections);
+  const [showGhlForm, setShowGhlForm] = useState(false);
+  const [ghlLabel, setGhlLabel] = useState("");
+  const [ghlLocationInput, setGhlLocationInput] = useState("");
+  const [ghlToken, setGhlToken] = useState("");
+  const [ghlSaving, setGhlSaving] = useState(false);
+  const [ghlError, setGhlError] = useState("");
+  const [ghlSuccess, setGhlSuccess] = useState("");
+
+  const handleGhlSave = async () => {
+    setGhlError("");
+    setGhlSuccess("");
+    if (!ghlLabel.trim() || !ghlLocationInput.trim() || !ghlToken.trim()) {
+      setGhlError("All three fields are required.");
+      return;
+    }
+    setGhlSaving(true);
+    try {
+      const res = await fetch("/api/settings/ghl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          locationLabel: ghlLabel.trim(),
+          locationInput: ghlLocationInput.trim(),
+          pitToken: ghlToken.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to save");
+      }
+      setGhlConnections((prev) => {
+        // Replace existing row for same location_id if present, else prepend
+        const filtered = prev.filter((c) => c.location_id !== data.connection.location_id);
+        return [data.connection, ...filtered];
+      });
+      setGhlLabel("");
+      setGhlLocationInput("");
+      setGhlToken("");
+      setShowGhlForm(false);
+      setGhlSuccess(
+        data.locationName
+          ? `Connected to ${data.locationName}.`
+          : "GHL location connected."
+      );
+      setTimeout(() => setGhlSuccess(""), 4000);
+    } catch (err: any) {
+      setGhlError(err.message || "Failed to save");
+    } finally {
+      setGhlSaving(false);
+    }
+  };
+
+  const handleGhlRemove = async (id: string) => {
+    if (!confirm("Remove this GHL location? You can re-connect later if needed.")) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/settings/ghl?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to remove");
+      }
+      setGhlConnections((prev) => prev.filter((c) => c.id !== id));
+    } catch (err: any) {
+      setGhlError(err.message || "Failed to remove");
+    }
+  };
 
   const hasPaid = hasAnyPurchaseClient(purchases, isUnlimited);
   const planLabel = getPlanLabel(isUnlimited, purchases.length);
@@ -278,6 +360,137 @@ export default function SettingsClient({
           >
             {saving ? "Saving..." : "Save Settings"}
           </button>
+        </div>
+
+        {/* GHL Locations */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 mt-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900">GHL Locations</h2>
+            {!showGhlForm && (
+              <button
+                onClick={() => {
+                  setShowGhlForm(true);
+                  setGhlError("");
+                  setGhlSuccess("");
+                }}
+                className="text-sm font-medium text-mint-600 hover:text-mint-700"
+              >
+                + Add Location
+              </button>
+            )}
+          </div>
+
+          {ghlConnections.length === 0 && !showGhlForm && (
+            <p className="text-sm text-gray-500">
+              Connect a GHL sub-account so you can push templates straight into it. Uses a Private Integration Token; no marketplace install required.
+            </p>
+          )}
+
+          {ghlConnections.length > 0 && (
+            <ul className="space-y-2 mb-4">
+              {ghlConnections.map((c) => (
+                <li
+                  key={c.id}
+                  className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
+                >
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">
+                      {c.location_label || "(no label)"}
+                    </div>
+                    <div className="text-xs text-gray-500 font-mono">
+                      {c.location_id}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleGhlRemove(c.id)}
+                    className="text-xs text-gray-500 hover:text-red-600"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {showGhlForm && (
+            <div className="border-t border-gray-100 pt-4 mt-4 space-y-4">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700 space-y-2">
+                <div className="font-medium text-gray-900">How to generate a Private Integration Token</div>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>In GHL, switch into the sub-account you want to connect.</li>
+                  <li>Go to <span className="font-mono text-xs bg-white px-1 py-0.5 rounded">Settings → Private Integrations</span>.</li>
+                  <li>Click <strong>Create new Integration</strong>, name it "FlowMint."</li>
+                  <li>Enable these scopes: <span className="font-mono text-xs bg-white px-1 py-0.5 rounded">locations.readonly</span> and <span className="font-mono text-xs bg-white px-1 py-0.5 rounded">emails/builder.write</span>.</li>
+                  <li>Copy the token (GHL shows it only once).</li>
+                  <li>Copy the URL from your browser address bar (any page in your sub-account works — we read the location ID out of it).</li>
+                </ol>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Label (just for you)</label>
+                <input
+                  type="text"
+                  value={ghlLabel}
+                  onChange={(e) => setGhlLabel(e.target.value)}
+                  placeholder="Shimmer Labs"
+                  className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-mint-300 focus:border-mint-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">GHL URL</label>
+                <input
+                  type="text"
+                  value={ghlLocationInput}
+                  onChange={(e) => setGhlLocationInput(e.target.value)}
+                  placeholder="https://app.gohighlevel.com/v2/location/..."
+                  className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-mint-300 focus:border-mint-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Paste the URL of any page in your GHL sub-account. We&apos;ll extract the location ID.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Private Integration Token</label>
+                <input
+                  type="password"
+                  value={ghlToken}
+                  onChange={(e) => setGhlToken(e.target.value)}
+                  placeholder="pit-..."
+                  className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-mint-300 focus:border-mint-500"
+                />
+              </div>
+
+              {ghlError && <p className="text-red-600 text-sm">{ghlError}</p>}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleGhlSave}
+                  disabled={ghlSaving}
+                  className="flex-1 bg-mint-600 text-white font-medium py-3 rounded-lg hover:bg-mint-700 transition-colors disabled:opacity-50"
+                >
+                  {ghlSaving ? "Validating..." : "Connect GHL Location"}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowGhlForm(false);
+                    setGhlError("");
+                    setGhlLabel("");
+                    setGhlLocationInput("");
+                    setGhlToken("");
+                  }}
+                  className="px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {ghlSuccess && (
+            <p className="text-green-600 text-sm mt-3">{ghlSuccess}</p>
+          )}
         </div>
       </main>
     </div>

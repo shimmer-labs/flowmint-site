@@ -8,9 +8,24 @@ import { createAdminClient } from "./supabase/admin";
 import type { Purchase } from "./stripe";
 
 /**
+ * Beta-grace mode: when BETA_OPEN_ACCESS=true, every user is treated as having
+ * Unlimited access. Bypasses every purchase gate downstream (export, push, AI
+ * edit) because every other check delegates to hasUnlimitedAccess first.
+ *
+ * Set in Vercel for the prod beta cohort (Reed, Josh, +1). Tear out when we
+ * switch on real pricing post-beta. See parking lot in plan.md.
+ */
+export function isBetaOpenAccess(): boolean {
+  return process.env.BETA_OPEN_ACCESS === "true";
+}
+
+/**
  * Check if user has an active unlimited subscription
  */
 export async function hasUnlimitedAccess(userId: string): Promise<boolean> {
+  // Beta-grace mode short-circuits the paywall for everyone.
+  if (isBetaOpenAccess()) return true;
+
   const admin = createAdminClient();
   const { data: profile } = await admin
     .from("profiles")
