@@ -25,6 +25,10 @@ interface EmailTemplate {
   format: string;
   analysis_id: string | null;
   created_at: string;
+  pushed_at?: string | null;
+  pushed_to_platform?: string | null;
+  pushed_location_id?: string | null;
+  ghl_template_id?: string | null;
 }
 
 interface GhlConnection {
@@ -92,6 +96,7 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
   const [ghlPushResult, setGhlPushResult] = useState<{
     flowName: string;
     pushed: number;
+    skipped: number;
     failed: number;
   } | null>(null);
 
@@ -161,9 +166,12 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
       setGhlPushResult({
         flowName: ghlPushModal.flowName,
         pushed: data.pushed ?? 0,
+        skipped: data.skipped ?? 0,
         failed: data.failed ?? 0,
       });
       setGhlPushModal(null);
+      // Re-fetch so the "Synced" badges reflect the push.
+      router.refresh();
       setTimeout(() => setGhlPushResult(null), 8000);
     } catch (err: any) {
       setGhlPushError(err.message || "Push failed");
@@ -387,6 +395,8 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
             const canExport = canExportThisFlow(group);
             const isExpanded = expandedFlow === `${group.analysisId}-${group.flowId}`;
             const groupKey = `${group.analysisId}-${group.flowId}-${group.platform}`;
+            const allSynced = group.templates.every((t) => !!t.pushed_at);
+            const someSynced = group.templates.some((t) => !!t.pushed_at);
 
             return (
               <div
@@ -410,6 +420,15 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
                         Purchased
                       </span>
                     )}
+                    {allSynced ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded bg-green-100 text-green-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> Synced to GHL
+                      </span>
+                    ) : someSynced ? (
+                      <span className="text-xs font-medium px-2 py-1 rounded bg-amber-100 text-amber-700">
+                        Partially synced
+                      </span>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-3">
                     {canExport ? (
@@ -471,7 +490,14 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
                               <div className="flex items-center gap-3">
                                 <span className="text-xs font-bold text-gray-400 w-6">#{template.email_number}</span>
                                 <div>
-                                  <div className="font-medium text-gray-900">{template.subject}</div>
+                                  <div className="font-medium text-gray-900 flex items-center gap-2">
+                                    {template.subject}
+                                    {template.pushed_at && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> synced
+                                      </span>
+                                    )}
+                                  </div>
                                   <div className="text-sm text-gray-500">{template.preheader}</div>
                                 </div>
                               </div>
@@ -837,10 +863,15 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
             </div>
             <div className="flex-1">
               <div className="font-medium text-gray-900 text-sm">
-                Pushed {ghlPushResult.pushed} of {ghlPushResult.pushed + ghlPushResult.failed}
+                Pushed {ghlPushResult.pushed} new
+                {ghlPushResult.skipped > 0 ? `, ${ghlPushResult.skipped} already synced` : ""}
+                {ghlPushResult.failed > 0 ? `, ${ghlPushResult.failed} failed` : ""}
               </div>
               <div className="text-xs text-gray-600 mt-1">
-                {ghlPushResult.flowName} now lives in your GHL email templates list. Next: wire them into a workflow inside GHL.
+                {ghlPushResult.skipped > 0
+                  ? `No duplicates created — already-synced emails were skipped. `
+                  : ""}
+                {ghlPushResult.flowName} lives in your GHL email templates list. Next: wire them into a workflow inside GHL.
               </div>
             </div>
             <button

@@ -18,6 +18,7 @@ interface PushResult {
   templateId: string;
   success: boolean;
   platformTemplateId?: string;
+  skipped?: boolean;
   error?: string;
 }
 
@@ -95,9 +96,28 @@ export async function POST(request: NextRequest) {
 
     // Push each template
     const results: PushResult[] = [];
+    let skipped = 0;
 
     for (const template of accessible) {
       try {
+        // Dedup: if this email was already pushed to THIS GHL location, don't
+        // create it again — that's what duplicated templates in the FlowMint
+        // folder on a second push.
+        if (
+          platform === "ghl" &&
+          template.ghl_template_id &&
+          template.pushed_location_id === ghlLocationId
+        ) {
+          skipped++;
+          results.push({
+            templateId: template.id,
+            success: true,
+            platformTemplateId: template.ghl_template_id,
+            skipped: true,
+          });
+          continue;
+        }
+
         const platformId =
           platform === "ghl"
             ? await pushToGHL(user.id, ghlLocationId, template)
@@ -108,10 +128,17 @@ export async function POST(request: NextRequest) {
           platformTemplateId: platformId,
         });
 
-        // Track push in DB
+        // Track push in DB (store the GHL template id + location so a re-push
+        // dedupes and the UI can show "Synced").
         await admin
           .from("email_templates")
-          .update({ pushed_to_platform: platform, pushed_at: new Date().toISOString() })
+          .update({
+            pushed_to_platform: platform,
+            pushed_at: new Date().toISOString(),
+            ...(platform === "ghl"
+              ? { ghl_template_id: platformId, pushed_location_id: ghlLocationId }
+              : {}),
+          })
           .eq("id", template.id);
       } catch (err: any) {
         results.push({
@@ -123,11 +150,13 @@ export async function POST(request: NextRequest) {
     }
 
     const successCount = results.filter((r) => r.success).length;
+    const pushedCount = successCount - skipped;
 
     return NextResponse.json({
       success: successCount > 0,
       total: accessible.length,
-      pushed: successCount,
+      pushed: pushedCount,
+      skipped,
       failed: accessible.length - successCount,
       results,
     });
