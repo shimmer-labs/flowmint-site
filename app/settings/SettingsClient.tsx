@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/contexts/AuthContext";
 import { hasAnyPurchaseClient, getPlanLabel } from "@/app/lib/plan-gating-client";
+import { isBetaOpenAccessClient } from "@/app/lib/beta-client";
 import type { Purchase } from "@/app/lib/stripe";
 
 const PLATFORMS = [
@@ -124,6 +125,7 @@ export default function SettingsClient({
     }
   };
 
+  const beta = isBetaOpenAccessClient();
   const hasPaid = hasAnyPurchaseClient(purchases, isUnlimited);
   const planLabel = getPlanLabel(isUnlimited, purchases.length);
 
@@ -195,16 +197,16 @@ export default function SettingsClient({
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-y-3">
           <a href="/" className="text-2xl font-bold text-mint-700">FlowMint</a>
-          <nav className="flex items-center gap-6">
+          <nav className="flex items-center gap-4 sm:gap-6 flex-wrap">
             <a href="/dashboard" className="text-sm text-gray-600 hover:text-gray-900">Dashboard</a>
             <a href="/templates" className="text-sm text-gray-600 hover:text-gray-900">Templates</a>
             <a href="/settings" className="text-sm text-mint-600 font-medium">Settings</a>
             <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-              hasPaid ? "bg-mint-100 text-mint-700" : "bg-gray-100 text-gray-600"
+              beta ? "bg-amber-100 text-amber-700" : hasPaid ? "bg-mint-100 text-mint-700" : "bg-gray-100 text-gray-600"
             }`}>
-              {planLabel}
+              {beta ? "Beta" : planLabel}
             </span>
             <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-900">
               Sign out

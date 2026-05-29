@@ -3,7 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/app/contexts/AuthContext'
-import { hasAnyPurchaseClient, hasFullCampaignClient, getPlanLabel } from '@/app/lib/plan-gating-client'
+import { hasAnyPurchaseClient, getPlanLabel } from '@/app/lib/plan-gating-client'
+import { isBetaOpenAccessClient } from '@/app/lib/beta-client'
+import AnalyzingCard from '@/app/components/AnalyzingCard'
 import type { Purchase } from '@/app/lib/stripe'
 
 interface Analysis {
@@ -14,6 +16,12 @@ interface Analysis {
   last_refreshed: string
 }
 
+interface GhlConnection {
+  id: string
+  location_id: string
+  location_label: string | null
+}
+
 interface Props {
   user: { email: string; name?: string }
   analyses: Analysis[]
@@ -21,19 +29,21 @@ interface Props {
   isUnlimited: boolean
   templateCount: number
   flowCount: number
+  ghlConnections: GhlConnection[]
 }
 
-export default function DashboardClient({ user, analyses, purchases, isUnlimited, templateCount, flowCount }: Props) {
+export default function DashboardClient({ user, analyses, purchases, isUnlimited, templateCount, flowCount, ghlConnections }: Props) {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [progress, setProgress] = useState(0)
-  const [currentTask, setCurrentTask] = useState('')
   const router = useRouter()
   const { signOut } = useAuth()
 
+  const beta = isBetaOpenAccessClient()
   const hasPaid = hasAnyPurchaseClient(purchases, isUnlimited)
   const planLabel = getPlanLabel(isUnlimited, purchases.length)
+  const ghlConnected = ghlConnections.length > 0
+  const isFirstRun = analyses.length === 0
 
   // Get purchase badge for an analysis
   const getAnalysisBadge = (analysisId: string) => {
@@ -57,31 +67,12 @@ export default function DashboardClient({ user, analyses, purchases, isUnlimited
     setError('')
     setLoading(true)
 
-    let progressInterval: NodeJS.Timeout | null = null
-
     try {
       let validatedUrl = url
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         validatedUrl = 'https://' + url
       }
       new URL(validatedUrl)
-
-      const tasks = [
-        { progress: 15, task: 'Connecting to website...' },
-        { progress: 30, task: 'Scraping content...' },
-        { progress: 50, task: 'Analyzing brand voice...' },
-        { progress: 70, task: 'Extracting brand colors...' },
-        { progress: 85, task: 'Generating recommendations...' },
-      ]
-
-      let taskIndex = 0
-      progressInterval = setInterval(() => {
-        if (taskIndex < tasks.length) {
-          setProgress(tasks[taskIndex].progress)
-          setCurrentTask(tasks[taskIndex].task)
-          taskIndex++
-        }
-      }, 2000)
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -95,19 +86,11 @@ export default function DashboardClient({ user, analyses, purchases, isUnlimited
       }
 
       const data = await response.json()
-      if (progressInterval) clearInterval(progressInterval)
-      setProgress(100)
-      setCurrentTask('Analysis complete!')
 
       sessionStorage.setItem(`analysis-${data.analysisId}`, JSON.stringify(data))
 
-      setTimeout(() => {
-        router.push(`/results?id=${data.analysisId}`)
-      }, 500)
+      router.push(`/results?id=${data.analysisId}`)
     } catch (err: any) {
-      if (progressInterval) clearInterval(progressInterval)
-      setProgress(0)
-      setCurrentTask('')
       if (err.message.includes('Invalid URL')) {
         setError('Please enter a valid URL (e.g., https://example.com)')
       } else {
@@ -128,16 +111,16 @@ export default function DashboardClient({ user, analyses, purchases, isUnlimited
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-y-3">
           <a href="/" className="text-2xl font-bold text-mint-700">FlowMint</a>
-          <nav className="flex items-center gap-6">
+          <nav className="flex items-center gap-4 sm:gap-6 flex-wrap">
             <a href="/dashboard" className="text-sm text-mint-600 font-medium">Dashboard</a>
             <a href="/templates" className="text-sm text-gray-600 hover:text-gray-900">Templates</a>
             <a href="/settings" className="text-sm text-gray-600 hover:text-gray-900">Settings</a>
             <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-              hasPaid ? 'bg-mint-100 text-mint-700' : 'bg-gray-100 text-gray-600'
+              beta ? 'bg-amber-100 text-amber-700' : hasPaid ? 'bg-mint-100 text-mint-700' : 'bg-gray-100 text-gray-600'
             }`}>
-              {planLabel}
+              {beta ? 'Beta' : planLabel}
             </span>
             <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
               Sign out
@@ -148,10 +131,47 @@ export default function DashboardClient({ user, analyses, purchases, isUnlimited
 
       <main className="max-w-6xl mx-auto px-6 py-12">
         {/* Welcome */}
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          {user.name ? `Welcome, ${user.name.split(' ')[0]}` : 'Dashboard'}
-        </h1>
-        <p className="text-gray-600 mb-8">Analyze a website to generate personalized email flows.</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+          <h1 className="text-3xl font-bold text-gray-900">
+            {user.name ? `Welcome, ${user.name.split(' ')[0]}` : 'Dashboard'}
+          </h1>
+          {/* GHL connection status — gives GoHighLevel a presence on the dashboard */}
+          {ghlConnected ? (
+            <a href="/settings" className="inline-flex items-center gap-2 text-sm bg-ghl-50 text-ghl-700 ring-1 ring-ghl-200 rounded-full px-3 py-1.5 hover:bg-ghl-100 transition-colors">
+              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+              GoHighLevel connected{ghlConnections[0]?.location_label ? `: ${ghlConnections[0].location_label}` : ''}
+            </a>
+          ) : (
+            <a href="/settings" className="inline-flex items-center gap-2 text-sm bg-gray-100 text-gray-600 rounded-full px-3 py-1.5 hover:bg-gray-200 transition-colors">
+              <span className="w-2 h-2 rounded-full bg-gray-400"></span>
+              Connect GoHighLevel
+            </a>
+          )}
+        </div>
+        <p className="text-gray-600 mb-8">Turn any website into a ready-to-send email campaign.</p>
+
+        {/* First-run 3-step intro (ported from the Shopify plugin) */}
+        {isFirstRun && !loading && (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 md:p-8 mb-8">
+            <h2 className="text-xl font-bold text-gray-900 mb-1">How it works</h2>
+            <p className="text-gray-500 text-sm mb-6">Paste your URL below to get started — it takes about a minute.</p>
+            <div className="grid md:grid-cols-3 gap-5">
+              {[
+                { n: 1, t: 'Paste your URL', d: 'We read your site — voice, colors, products, the works.' },
+                { n: 2, t: 'See your first email', d: 'Get one on-brand email instantly, then generate the whole flow.' },
+                { n: 3, t: 'Push to your CRM', d: 'Send it straight into GoHighLevel (or 5 other platforms).' },
+              ].map((s) => (
+                <div key={s.n} className="flex gap-3">
+                  <div className="w-8 h-8 rounded-full bg-mint-100 text-mint-700 font-bold flex items-center justify-center flex-shrink-0">{s.n}</div>
+                  <div>
+                    <div className="font-semibold text-gray-900">{s.t}</div>
+                    <div className="text-sm text-gray-500">{s.d}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Stats */}
         {(templateCount > 0 || analyses.length > 0) && (
@@ -174,19 +194,7 @@ export default function DashboardClient({ user, analyses, purchases, isUnlimited
         {/* Analyze Form */}
         <div className="mb-12">
           {loading ? (
-            <div className="max-w-2xl bg-white rounded-xl border-2 border-mint-600 p-12 text-center shadow-lg">
-              <div className="inline-block w-16 h-16 border-4 border-gray-200 border-t-mint-600 rounded-full animate-spin mb-6"></div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Analyzing Your Brand</h2>
-              <div className="w-full max-w-md mx-auto h-6 bg-gray-200 rounded-full overflow-hidden mb-4">
-                <div
-                  className="h-full bg-mint-600 transition-all duration-500 flex items-center justify-center text-white text-xs font-semibold"
-                  style={{ width: `${progress}%` }}
-                >
-                  {progress}%
-                </div>
-              </div>
-              <p className="text-gray-600">{currentTask}</p>
-            </div>
+            <AnalyzingCard />
           ) : (
             <form onSubmit={handleAnalyze} className="max-w-2xl">
               <div className="flex flex-col md:flex-row gap-4">

@@ -16,7 +16,13 @@ import type { Purchase } from "./stripe";
  * switch on real pricing post-beta. See parking lot in plan.md.
  */
 export function isBetaOpenAccess(): boolean {
-  return process.env.BETA_OPEN_ACCESS === "true";
+  // NEXT_PUBLIC_ variant lets client components read the same flag (see
+  // beta-client.ts). Either one being "true" turns beta on, so there's a
+  // single toggle to set rather than two that must agree.
+  return (
+    process.env.BETA_OPEN_ACCESS === "true" ||
+    process.env.NEXT_PUBLIC_BETA_OPEN_ACCESS === "true"
+  );
 }
 
 /**

@@ -231,48 +231,110 @@ async function pushToOmnisend(apiKey: string, template: any): Promise<string> {
  * stale (folder deleted from GHL UI), the push will fail; the user removes
  * the cached ID by reconnecting the location in Settings.
  */
+// Sentinel written into flowmint_folder_id while a folder is being created, so
+// concurrent pushes don't each create their own "FlowMint" folder.
+const FOLDER_CLAIM_PREFIX = "creating:";
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function ensureFlowMintFolder(
   userId: string,
   locationId: string
 ): Promise<string> {
   const admin = createAdminClient();
-  const { data: conn, error: loadErr } = await admin
+  const isRealId = (v: string | null | undefined): v is string =>
+    !!v && !v.startsWith(FOLDER_CLAIM_PREFIX);
+
+  const loadConn = async () => {
+    const { data, error } = await admin
+      .from("ghl_connections")
+      .select("id, flowmint_folder_id")
+      .eq("user_id", userId)
+      .eq("location_id", locationId)
+      .maybeSingle();
+    if (error) throw new Error(`load connection failed: ${error.message}`);
+    if (!data) throw new Error(`no connection for location ${locationId}`);
+    return data;
+  };
+
+  const conn = await loadConn();
+  if (isRealId(conn.flowmint_folder_id)) return conn.flowmint_folder_id;
+
+  // Atomically claim the right to create the folder. The UPDATE ... WHERE
+  // flowmint_folder_id IS NULL is serialized by Postgres row locking, so out of
+  // N concurrent pushes exactly one wins; the rest fall through to poll for the
+  // real id the winner persists.
+  const claim = `${FOLDER_CLAIM_PREFIX}${Date.now()}`;
+  let won = false;
+
+  const nullClaim = await admin
     .from("ghl_connections")
-    .select("id, flowmint_folder_id")
-    .eq("user_id", userId)
-    .eq("location_id", locationId)
-    .maybeSingle();
-
-  if (loadErr) throw new Error(`load connection failed: ${loadErr.message}`);
-  if (!conn) throw new Error(`no connection for location ${locationId}`);
-  if (conn.flowmint_folder_id) return conn.flowmint_folder_id;
-
-  // No cached folder ID; create one and persist.
-  const createUrl = `https://services.leadconnectorhq.com/emails/public/v2/locations/${locationId}/templates/folders`;
-  const createRes = await ghlFetch(userId, locationId, createUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Version: "2023-02-21" },
-    body: JSON.stringify({ name: "FlowMint" }),
-  });
-
-  if (!createRes.ok) {
-    const text = await createRes.text().catch(() => "");
-    throw new Error(
-      `GHL create-folder failed (${createRes.status}): ${text.slice(0, 200)}`
-    );
+    .update({ flowmint_folder_id: claim })
+    .eq("id", conn.id)
+    .is("flowmint_folder_id", null)
+    .select("id");
+  if (nullClaim.data && nullClaim.data.length > 0) {
+    won = true;
+  } else if (conn.flowmint_folder_id?.startsWith(FOLDER_CLAIM_PREFIX)) {
+    // A prior attempt left a stale claim (crashed mid-create). Reclaim it if
+    // it's older than 30s and still unchanged since we read it.
+    const ts = Number(conn.flowmint_folder_id.slice(FOLDER_CLAIM_PREFIX.length));
+    if (!Number.isNaN(ts) && ts < Date.now() - 30_000) {
+      const reclaim = await admin
+        .from("ghl_connections")
+        .update({ flowmint_folder_id: claim })
+        .eq("id", conn.id)
+        .eq("flowmint_folder_id", conn.flowmint_folder_id)
+        .select("id");
+      if (reclaim.data && reclaim.data.length > 0) won = true;
+    }
   }
 
-  const folder = await createRes.json().catch(() => ({}));
-  if (!folder.id) {
-    throw new Error("GHL create-folder response missing id field");
+  if (!won) {
+    // Another push is creating the folder — wait for the real id (max ~10s).
+    for (let i = 0; i < 20; i++) {
+      await sleep(500);
+      const row = await loadConn();
+      if (isRealId(row.flowmint_folder_id)) return row.flowmint_folder_id;
+    }
+    throw new Error("Timed out waiting for the FlowMint folder to be created. Try the push again.");
   }
 
-  await admin
-    .from("ghl_connections")
-    .update({ flowmint_folder_id: folder.id })
-    .eq("id", conn.id);
+  // We hold the claim — create the folder, then persist its real id.
+  try {
+    const createUrl = `https://services.leadconnectorhq.com/emails/public/v2/locations/${locationId}/templates/folders`;
+    const createRes = await ghlFetch(userId, locationId, createUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Version: "2023-02-21" },
+      body: JSON.stringify({ name: "FlowMint" }),
+    });
 
-  return folder.id;
+    if (!createRes.ok) {
+      const text = await createRes.text().catch(() => "");
+      throw new Error(
+        `GHL create-folder failed (${createRes.status}): ${text.slice(0, 200)}`
+      );
+    }
+
+    const folder = await createRes.json().catch(() => ({}));
+    if (!folder.id) {
+      throw new Error("GHL create-folder response missing id field");
+    }
+
+    await admin
+      .from("ghl_connections")
+      .update({ flowmint_folder_id: folder.id })
+      .eq("id", conn.id);
+
+    return folder.id;
+  } catch (err) {
+    // Release our claim so a retry isn't blocked by the poll path.
+    await admin
+      .from("ghl_connections")
+      .update({ flowmint_folder_id: null })
+      .eq("id", conn.id)
+      .eq("flowmint_folder_id", claim);
+    throw err;
+  }
 }
 
 /**

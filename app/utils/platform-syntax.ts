@@ -140,7 +140,40 @@ export const PLATFORMS: Record<string, PlatformDefinition> = {
 export function getSyntaxInstructions(platformId: string): string {
   const platform = PLATFORMS[platformId] || PLATFORMS.klaviyo;
 
-  const base = `
+  // GHL does NOT evaluate Liquid block tags ({% if %}/{% else %}/{% endif %}) —
+  // they ship as literal text in the recipient's inbox. So GHL gets its own
+  // instruction set with NO conditional block and inline `||` fallbacks only.
+  // See .claude/skills/ghl-merge-field-generator.
+  if (platformId === "ghl") {
+    return `
+**Platform:** ${platform.name}
+
+**Required Personalization Syntax:**
+- First Name: ${platform.syntax.firstName}
+- Email: ${platform.syntax.email}
+${platform.syntax.lastName ? `- Last Name: ${platform.syntax.lastName}` : ""}
+
+**GHL MERGE-FIELD RULES (critical, applies to every dynamic field in this email):**
+
+1. Double curly braces, lowercase, underscores not spaces: \`{{contact.first_name}}\`.
+2. **Always emit a fallback** on any personalization field using the double-pipe operator: \`{{contact.first_name || "there"}}\`. Blank-name sends are the #1 failure mode in GHL. No exceptions.
+3. **NEVER use \`{% if %}\`, \`{% else %}\`, \`{% endif %}\`, or any \`{% ... %}\` tag.** GHL does not evaluate them — they would appear as literal text in the email. There is NO conditional-block syntax. For a personalized greeting, write it inline with the fallback: \`Hi {{contact.first_name || "there"}},\` — never wrap it in a conditional.
+4. Use **Custom Values** for stable business data (company name, booking URL, office phone, standard offer name): \`{{custom_values.booking_url}}\`, \`{{custom_values.company_name}}\`. Never hardcode a phone number, booking link, or company name into copy. Invent custom_values keys as needed based on what the copy requires.
+5. Use **Custom Fields** only for genuinely per-contact data: \`{{contact.custom.field_key}}\`.
+6. **No em dashes** anywhere in subject, preheader, or body. Use a comma, a period, or a rewrite. This is brand voice, not optional.
+
+**Unsubscribe Link:** ${platform.syntax.unsubscribe} (include in the footer)
+
+Self-check before output:
+- Every personalization field has a \`||\` fallback?
+- ZERO \`{% %}\` tags anywhere in subject, preheader, or body?
+- All field paths lowercase and underscore-style?
+- Stable business data expressed as \`{{custom_values.*}}\`, not hardcoded?
+- Zero em dashes?
+`;
+  }
+
+  return `
 **Platform:** ${platform.name}
 
 **Required Personalization Syntax:**
@@ -162,31 +195,6 @@ IMPORTANT:
 - Always include unsubscribe link in footer
 - Use first name conditional to show "Hi [Name]" or fallback to "Hi there"
 `;
-
-  // GHL needs the merge-field generator rules baked into the prompt because
-  // merge fields fail silently in GHL. See .claude/skills/ghl-merge-field-generator.
-  if (platformId === "ghl") {
-    return (
-      base +
-      `
-**GHL MERGE-FIELD RULES (critical, applies to every dynamic field in this email):**
-
-1. Double curly braces, lowercase, underscores not spaces: \`{{contact.first_name}}\`.
-2. **Always emit a fallback** on any personalization field using the double-pipe operator: \`{{contact.first_name || "there"}}\`. Blank-name sends are the #1 failure mode in GHL. No exceptions.
-3. Use **Custom Values** for stable business data (company name, booking URL, office phone, standard offer name): \`{{custom_values.booking_url}}\`, \`{{custom_values.company_name}}\`. Never hardcode a phone number, booking link, or company name into copy. Invent custom_values keys as needed based on what the copy requires.
-4. Use **Custom Fields** only for genuinely per-contact data: \`{{contact.custom.field_key}}\`.
-5. **No em dashes** anywhere in subject, preheader, or body. Use a comma, a period, or a rewrite. This is brand voice, not optional.
-
-Self-check before output:
-- Every personalization field has a \`||\` fallback?
-- All field paths lowercase and underscore-style?
-- Stable business data expressed as \`{{custom_values.*}}\`, not hardcoded?
-- Zero em dashes?
-`
-    );
-  }
-
-  return base;
 }
 
 /**

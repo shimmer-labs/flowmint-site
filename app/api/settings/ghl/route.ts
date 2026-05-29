@@ -106,9 +106,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { locationLabel, locationInput, pitToken } = body;
 
-    if (!locationLabel || !locationInput || !pitToken) {
+    // locationLabel is optional — if the caller doesn't supply one (e.g. the
+    // just-in-time connect modal), we use the resolved business name from GHL.
+    if (!locationInput || !pitToken) {
       return NextResponse.json(
-        { error: "Label, GHL URL/location ID, and token are all required." },
+        { error: "GHL URL/location ID and token are both required." },
         { status: 400 }
       );
     }
@@ -130,6 +132,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: v.error }, { status: 400 });
     }
 
+    // Prefer the human label the user typed; otherwise use the business name GHL
+    // resolved (so the connection shows "Acme HVAC", not a raw location ID).
+    const resolvedLabel = (locationLabel?.trim() || v.locationName || locationId) as string;
+
     const admin = createAdminClient();
     const { data, error } = await admin
       .from("ghl_connections")
@@ -137,7 +143,7 @@ export async function POST(request: NextRequest) {
         {
           user_id: userId,
           location_id: locationId,
-          location_label: locationLabel,
+          location_label: resolvedLabel,
           auth_type: "pit",
           access_token: pitToken,
           refresh_token: null,

@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/app/contexts/AuthContext";
 import { analytics } from "@/app/lib/analytics";
+import { isBetaOpenAccessClient } from "@/app/lib/beta-client";
+import AnalyzingCard from "@/app/components/AnalyzingCard";
 
 export default function Home() {
+  const beta = isBetaOpenAccessClient();
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [progress, setProgress] = useState(0);
-  const [currentTask, setCurrentTask] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -50,8 +51,6 @@ export default function Home() {
     setError("");
     setLoading(true);
 
-    let progressInterval: NodeJS.Timeout | null = null;
-
     try {
       let validatedUrl = url;
       if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -59,23 +58,6 @@ export default function Home() {
       }
 
       new URL(validatedUrl);
-
-      const tasks = [
-        { progress: 15, task: "Connecting to website..." },
-        { progress: 30, task: "Scraping content..." },
-        { progress: 50, task: "Analyzing brand voice..." },
-        { progress: 70, task: "Extracting brand colors..." },
-        { progress: 85, task: "Generating recommendations..." },
-      ];
-
-      let taskIndex = 0;
-      progressInterval = setInterval(() => {
-        if (taskIndex < tasks.length) {
-          setProgress(tasks[taskIndex].progress);
-          setCurrentTask(tasks[taskIndex].task);
-          taskIndex++;
-        }
-      }, 2000);
 
       const response = await fetch("/api/analyze", {
         method: "POST",
@@ -90,10 +72,6 @@ export default function Home() {
 
       const data = await response.json();
 
-      if (progressInterval) clearInterval(progressInterval);
-      setProgress(100);
-      setCurrentTask("Analysis complete!");
-
       sessionStorage.setItem(
         `analysis-${data.analysisId}`,
         JSON.stringify(data)
@@ -101,13 +79,8 @@ export default function Home() {
 
       analytics.generateAnalysis(validatedUrl)
 
-      setTimeout(() => {
-        router.push(`/results?id=${data.analysisId}`);
-      }, 500);
+      router.push(`/results?id=${data.analysisId}`);
     } catch (err: any) {
-      if (progressInterval) clearInterval(progressInterval);
-      setProgress(0);
-      setCurrentTask("");
       if (err.message.includes("Invalid URL")) {
         setError("Please enter a valid URL (e.g., https://example.com)");
       } else {
@@ -121,26 +94,7 @@ export default function Home() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="max-w-2xl w-full bg-white rounded-xl border-2 border-mint-600 p-12 text-center shadow-lg">
-          <div className="inline-block w-16 h-16 border-4 border-gray-200 border-t-mint-600 rounded-full animate-spin mb-6"></div>
-          <h2 className="text-3xl font-bold text-gray-900 mb-6">
-            Analyzing Your Brand
-          </h2>
-          <div className="w-full max-w-md mx-auto h-6 bg-gray-200 rounded-full overflow-hidden mb-4">
-            <div
-              className="h-full bg-mint-600 transition-all duration-500 flex items-center justify-center text-white text-xs font-semibold"
-              style={{ width: `${progress}%` }}
-            >
-              {progress}%
-            </div>
-          </div>
-          <p className="text-lg text-gray-600 mb-8">{currentTask}</p>
-          <p className="text-sm text-gray-500">
-            This usually takes 10-30 seconds. We&apos;re scraping your website,
-            analyzing your brand voice, and creating personalized
-            recommendations.
-          </p>
-        </div>
+        <AnalyzingCard />
       </div>
     );
   }
@@ -410,14 +364,17 @@ export default function Home() {
             Simple Pricing. Pay When You&apos;re Ready.
           </h2>
           <p className="text-center text-gray-600 mb-8 text-lg">
-            Analyze and generate for free. Pay only when you&apos;re ready to export.
+            {beta
+              ? "We're in beta — everything's free while we test. Here's where pricing is headed."
+              : "Analyze and generate for free. Pay only when you're ready to export."}
           </p>
           <div className="bg-mint-50 border border-mint-200 rounded-lg px-6 py-3 text-center mb-12 max-w-xl mx-auto">
             <p className="text-sm text-mint-800">
-              <span className="font-semibold">Always free:</span> Analyze your brand + generate + preview all flows. No signup required.
+              <span className="font-semibold">{beta ? "Free during beta:" : "Always free:"}</span> Analyze your brand + generate + preview all flows. No signup required.
             </p>
           </div>
-          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+          <div className="relative max-w-4xl mx-auto">
+            <div className={`grid md:grid-cols-3 gap-6 ${beta ? "opacity-40 pointer-events-none select-none" : ""}`}>
             {/* Single Flow */}
             <div className="border border-gray-200 rounded-xl p-6">
               <h3 className="text-lg font-semibold mb-2">Single Flow</h3>
@@ -510,9 +467,12 @@ export default function Home() {
                 Subscribe — $149/mo
               </button>
             </div>
+            </div>
           </div>
           <p className="text-center text-xs text-gray-400 mt-6">
-            Single Flow and Full Campaign are one-time purchases locked to one brand analysis. Unlimited is a monthly subscription.
+            {beta
+              ? "Pricing is paused during the beta. We'll give you plenty of warning before anything turns paid."
+              : "Single Flow and Full Campaign are one-time purchases locked to one brand analysis. Unlimited is a monthly subscription."}
           </p>
         </div>
       </section>
@@ -528,8 +488,10 @@ export default function Home() {
                 a: "No! FlowMint works with any website — Shopify, WooCommerce, Squarespace, custom sites, even brick & mortar businesses with a web presence.",
               },
               {
-                q: "How does the credit system work?",
-                a: "Analyze any website for free and preview all generated flows. When you're ready to export, buy a Single Flow ($29) for one flow or a Full Campaign ($79) for all flows. Credits are locked to one brand analysis.",
+                q: "How much does it cost?",
+                a: beta
+                  ? "Right now FlowMint is free while we're in beta — analyze, generate, edit, and push as much as you like. We'll give you plenty of warning before any pricing kicks in."
+                  : "Analyze any website for free and preview all generated flows. When you're ready to export, buy a Single Flow ($29) for one flow or a Full Campaign ($79) for all flows. Credits are locked to one brand analysis.",
               },
               {
                 q: "What if I have multiple brands?",

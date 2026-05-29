@@ -34,6 +34,12 @@ export default async function DashboardPage() {
 
   const uniqueFlows = new Set(flowData?.map((t: any) => t.flow_id) || [])
 
+  // Fetch connected GHL locations (surfaced on the dashboard so GHL has a presence here)
+  const { data: ghlConnections } = await supabase
+    .from('ghl_connections')
+    .select('id, location_id, location_label')
+    .eq('user_id', user.id)
+
   return (
     <DashboardClient
       user={{ email: user.email!, name: user.user_metadata?.full_name }}
@@ -42,6 +48,7 @@ export default async function DashboardPage() {
       isUnlimited={isUnlimited}
       templateCount={templateCount || 0}
       flowCount={uniqueFlows.size}
+      ghlConnections={ghlConnections || []}
     />
   )
 }

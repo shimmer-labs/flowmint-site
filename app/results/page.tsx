@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/app/contexts/AuthContext";
 import { analytics } from "@/app/lib/analytics";
+import { isBetaOpenAccessClient } from "@/app/lib/beta-client";
 
 interface FlowRecommendation {
   id: string;
@@ -36,6 +37,12 @@ interface BrandAnalysis {
     blogsCount: number;
     hasAboutPage: boolean;
   };
+  images?: {
+    logo?: string;
+    hero?: string;
+    products?: string[];
+    lifestyle?: string[];
+  };
 }
 
 interface GeneratedEmail {
@@ -46,7 +53,10 @@ interface GeneratedEmail {
   format: "html" | "plain";
 }
 
+// GHL is the default — generated merge fields must match the platform the user
+// pushes to, and there's no syntax-conversion layer (see app/utils/platform-syntax.ts).
 const PLATFORMS = [
+  { id: "ghl", name: "GoHighLevel" },
   { id: "klaviyo", name: "Klaviyo" },
   { id: "mailchimp", name: "Mailchimp" },
   { id: "customerio", name: "Customer.io" },
@@ -59,31 +69,34 @@ function ResultsPage() {
   const router = useRouter();
   const { user } = useAuth();
   const analysisId = searchParams.get("id");
+  const beta = isBetaOpenAccessClient();
 
   const [analysis, setAnalysis] = useState<BrandAnalysis | null>(null);
   const [siteName, setSiteName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Platform & format selection
-  const [selectedPlatform, setSelectedPlatform] = useState("klaviyo");
+  // Platform & format selection — default to GHL (locked decision).
+  const [selectedPlatform, setSelectedPlatform] = useState("ghl");
   const [selectedFormat, setSelectedFormat] = useState<"html" | "plain">("html");
 
-  // Flow selection for batch generation
-  const [selectedFlows, setSelectedFlows] = useState<Set<string>>(new Set());
+  // The flow currently in focus: its first email is the instant "wow" sample,
+  // and "Generate the rest of this flow" generates the remainder of THIS flow.
+  const [activeFlow, setActiveFlow] = useState<FlowRecommendation | null>(null);
 
-  // Single email preview
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [selectedFlow, setSelectedFlow] = useState<FlowRecommendation | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [generatedEmail, setGeneratedEmail] = useState<GeneratedEmail | null>(null);
+  // Single-email "wow" sample (not saved to DB — pure preview via /api/generate-email).
+  const [sampleEmail, setSampleEmail] = useState<GeneratedEmail | null>(null);
+  const [sampleGenerating, setSampleGenerating] = useState(false);
+  const [sampleError, setSampleError] = useState<string | null>(null);
+  const [sampleNonce, setSampleNonce] = useState(0); // bump to force a re-roll
   const [copySuccess, setCopySuccess] = useState(false);
+  const sampleReqId = useRef(0);
 
-  // Batch generation
+  // Batch generation of the rest of the active flow.
   const [batchGenerating, setBatchGenerating] = useState(false);
-  const [batchJobId, setBatchJobId] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState({ completed: 0, total: 0, currentFlow: "" });
   const [batchComplete, setBatchComplete] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -98,9 +111,9 @@ function ResultsPage() {
       const parsed = JSON.parse(cachedData);
       setAnalysis(parsed.analysis);
       setSiteName(parsed.scrapedData?.siteName || "Your Brand");
-      // Pre-select all recommended flows
-      const flowIds = new Set<string>(parsed.analysis.recommendedFlows.map((f: FlowRecommendation) => f.id));
-      setSelectedFlows(flowIds);
+      // Auto-pick the top recommended flow as the default sample. No selection
+      // required to see the wow.
+      setActiveFlow(parsed.analysis.recommendedFlows?.[0] ?? null);
       setLoading(false);
       analytics.viewResults(analysisId!, parsed.analysis.businessModel);
     } else {
@@ -109,6 +122,54 @@ function ResultsPage() {
     }
   }, [analysisId]);
 
+  // Generate the sample email whenever the focused flow, platform, or format
+  // changes (or the user hits Regenerate). A request-id guard prevents a stale
+  // response from overwriting a newer one.
+  useEffect(() => {
+    if (!analysis || !activeFlow) return;
+    const reqId = ++sampleReqId.current;
+    setSampleGenerating(true);
+    setSampleError(null);
+    setSampleEmail(null);
+
+    (async () => {
+      try {
+        const res = await fetch("/api/generate-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            flow: activeFlow,
+            emailNumber: 1,
+            brandAnalysis: analysis,
+            platform: selectedPlatform,
+            format: selectedFormat,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to generate email");
+        const data = await res.json();
+        if (reqId === sampleReqId.current) setSampleEmail(data.email);
+      } catch (err) {
+        console.error("Sample email error:", err);
+        if (reqId === sampleReqId.current) setSampleError("Couldn't write the sample email. Hit Regenerate to try again.");
+      } finally {
+        if (reqId === sampleReqId.current) setSampleGenerating(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFlow, selectedPlatform, selectedFormat, sampleNonce]);
+
+  // If the analysis was run logged-out and the user has since signed in, claim
+  // the orphaned (user_id IS NULL) row so it's tied to their account and shows
+  // up on their dashboard. Idempotent server-side.
+  useEffect(() => {
+    if (!user || !analysisId) return;
+    fetch("/api/claim-analysis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ analysisId }),
+    }).catch(() => {});
+  }, [user, analysisId]);
+
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
@@ -116,82 +177,28 @@ function ResultsPage() {
     };
   }, []);
 
-  const toggleFlow = (flowId: string) => {
-    setSelectedFlows((prev) => {
-      const next = new Set(prev);
-      if (next.has(flowId)) next.delete(flowId);
-      else next.add(flowId);
-      return next;
-    });
-  };
-
-  const handlePreviewEmail = (flow: FlowRecommendation) => {
-    setSelectedFlow(flow);
-    setShowEmailModal(true);
-    setGenerating(false);
-    setGeneratedEmail(null);
-  };
-
-  const handleStartPreview = async () => {
-    if (!selectedFlow) return;
-    setGenerating(true);
-
-    try {
-      const response = await fetch("/api/generate-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          flow: selectedFlow,
-          emailNumber: 1,
-          brandAnalysis: analysis,
-          platform: selectedPlatform,
-          format: selectedFormat,
-        }),
-      });
-
-      if (!response.ok) throw new Error("Failed to generate email");
-      const data = await response.json();
-      setGeneratedEmail(data.email);
-    } catch (err) {
-      console.error("Email generation error:", err);
-      alert("Failed to generate email. Please try again.");
-      setShowEmailModal(false);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
   const handleCopyEmail = () => {
-    if (!generatedEmail) return;
-    const emailText = `Subject: ${generatedEmail.subject}\n\nPreheader: ${generatedEmail.preheader}\n\n${generatedEmail.body}`;
+    if (!sampleEmail) return;
+    const emailText = `Subject: ${sampleEmail.subject}\n\nPreheader: ${sampleEmail.preheader}\n\n${sampleEmail.body}`;
     navigator.clipboard.writeText(emailText);
     setCopySuccess(true);
     setTimeout(() => setCopySuccess(false), 2000);
   };
 
-  const closeModal = () => {
-    setShowEmailModal(false);
-    setSelectedFlow(null);
-    setGeneratedEmail(null);
-    setGenerating(false);
-    setCopySuccess(false);
-  };
-
-  const [batchError, setBatchError] = useState<string | null>(null);
-
-  const handleGenerateAll = async () => {
-    if (selectedFlows.size === 0) return;
+  // Generate the remaining emails of the active flow (the committed next step).
+  const handleGenerateRest = async () => {
+    if (!activeFlow) return;
     setBatchGenerating(true);
     setBatchComplete(false);
     setBatchError(null);
-    selectedFlows.forEach((flowId) => analytics.generateFlow(flowId));
+    analytics.generateFlow(activeFlow.id);
 
     try {
       const res = await fetch("/api/generate-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          flowIds: Array.from(selectedFlows),
+          flowIds: [activeFlow.id],
           brandAnalysis: analysis,
           platform: selectedPlatform,
           format: selectedFormat,
@@ -201,23 +208,18 @@ function ResultsPage() {
 
       if (!res.ok) {
         const data = await res.json();
-        if (res.status === 401) {
-          throw new Error("Please sign in to generate and save your flows.");
-        }
+        if (res.status === 401) throw new Error("Please sign in to generate and save your flow.");
         throw new Error(data.error || "Generation failed");
       }
 
       const data = await res.json();
-      setBatchJobId(data.jobId);
       setBatchProgress({ completed: 0, total: data.totalEmails, currentFlow: "" });
 
-      // Polling with timeout (5 minutes max)
       const pollStartTime = Date.now();
       const POLL_TIMEOUT_MS = 5 * 60 * 1000;
       let consecutiveErrors = 0;
 
       pollRef.current = setInterval(async () => {
-        // Timeout check
         if (Date.now() - pollStartTime > POLL_TIMEOUT_MS) {
           if (pollRef.current) clearInterval(pollRef.current);
           setBatchGenerating(false);
@@ -246,12 +248,10 @@ function ResultsPage() {
           } else if (status.status === "failed") {
             if (pollRef.current) clearInterval(pollRef.current);
             setBatchGenerating(false);
-            const errorMsg = status.errors?.[0] || "Generation failed unexpectedly.";
-            setBatchError(errorMsg);
+            setBatchError(status.errors?.[0] || "Generation failed unexpectedly.");
           }
         } catch {
           consecutiveErrors++;
-          // Give up after 5 consecutive polling errors
           if (consecutiveErrors >= 5) {
             if (pollRef.current) clearInterval(pollRef.current);
             setBatchGenerating(false);
@@ -293,9 +293,10 @@ function ResultsPage() {
     );
   }
 
-  const totalSelectedEmails = analysis.recommendedFlows
-    .filter((f) => selectedFlows.has(f.id))
-    .reduce((sum, f) => sum + f.emailCount, 0);
+  const images = analysis.images;
+  const hasImages = !!(images?.logo || images?.hero);
+  const otherFlows = analysis.recommendedFlows.filter((f) => f.id !== activeFlow?.id);
+  const restCount = activeFlow ? Math.max(activeFlow.emailCount - 1, 0) : 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -329,207 +330,246 @@ function ResultsPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-12">
-        {/* Success Banner */}
-        <div className="bg-gradient-to-r from-mint-50 to-green-50 border border-mint-200 rounded-xl p-6 mb-8">
-          <div className="flex items-start gap-4">
-            <svg className="w-8 h-8 text-mint-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                Analysis Complete for {siteName}!
-              </h2>
-              <p className="text-gray-700">
-                We&apos;ve analyzed your brand and generated personalized flow recommendations based on your business model: <strong>{analysis.businessModel}</strong>
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Data Sources */}
-        {analysis.sourcesAnalyzed && (
-          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-8">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <span className="text-sm font-medium text-gray-700">Data Sources Analyzed:</span>
-              <div className="flex flex-wrap gap-3 text-sm text-gray-600">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-mint-50 rounded-full">
-                  <span className="text-mint-600">&#10003;</span>
-                  {analysis.sourcesAnalyzed.productsCount} products
-                </span>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-50 rounded-full">
-                  <span className="text-purple-600">&#10003;</span>
-                  {analysis.sourcesAnalyzed.blogsCount} blog posts
-                </span>
-                {analysis.sourcesAnalyzed.hasAboutPage && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 rounded-full">
-                    <span className="text-blue-600">&#10003;</span>
-                    About page
-                  </span>
-                )}
+        {/* ============ BRAND CARD (the deliverable — lead with it) ============ */}
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 md:p-8 mb-8">
+          <div className="flex items-start gap-4 mb-6">
+            {images?.logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={images.logo} alt={`${siteName} logo`} className="w-14 h-14 rounded-lg object-contain border border-gray-200 bg-white flex-shrink-0" />
+            ) : (
+              <div className="w-14 h-14 rounded-lg bg-mint-100 text-mint-700 font-bold text-xl flex items-center justify-center flex-shrink-0">
+                {siteName.charAt(0).toUpperCase()}
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Platform & Format Selection */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-3">Email Platform</label>
-              <div className="flex flex-wrap gap-2">
-                {PLATFORMS.map((platform) => (
-                  <button
-                    key={platform.id}
-                    onClick={() => setSelectedPlatform(platform.id)}
-                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                      selectedPlatform === platform.id
-                        ? "bg-mint-600 text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    }`}
-                  >
-                    {platform.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-3">Format</label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSelectedFormat("html")}
-                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                    selectedFormat === "html"
-                      ? "bg-mint-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  HTML
-                </button>
-                <button
-                  onClick={() => setSelectedFormat("plain")}
-                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                    selectedFormat === "plain"
-                      ? "bg-mint-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  Plain Text
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Recommended Flows */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-3xl font-bold text-gray-900 mb-1">Recommended Email Flows</h2>
-              <p className="text-gray-600">Select flows to generate, then hit the button below</p>
-            </div>
-            {selectedFlows.size > 0 && !batchGenerating && !batchComplete && (
-              <span className="text-sm text-gray-500">
-                {selectedFlows.size} flow{selectedFlows.size !== 1 ? "s" : ""} selected ({totalSelectedEmails} emails)
-              </span>
             )}
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-mint-700 bg-mint-50 px-2.5 py-0.5 rounded-full mb-1.5">
+                <span>&#10003;</span> We read your brand
+              </div>
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">{siteName}</h1>
+              <p className="text-gray-600 mt-1">{analysis.valueProposition}</p>
+            </div>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
-            {analysis.recommendedFlows.map((flow, index) => {
-              const isSelected = selectedFlows.has(flow.id);
-              return (
-                <div
-                  key={flow.id}
-                  className={`bg-white rounded-xl p-6 shadow-sm transition-all duration-200 border-2 cursor-pointer ${
-                    isSelected
-                      ? "border-mint-500 ring-4 ring-mint-50"
-                      : "border-gray-200 hover:border-gray-300"
-                  }`}
-                  onClick={() => !batchGenerating && toggleFlow(flow.id)}
-                >
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        {index === 0 && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-mint-600 text-white">
-                            &#9733; TOP PICK
-                          </span>
-                        )}
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                          flow.priority === "Critical" ? "bg-red-100 text-red-700" :
-                          flow.priority === "High" ? "bg-orange-100 text-orange-700" :
-                          "bg-gray-100 text-gray-700"
-                        }`}>
-                          {flow.priority}
-                        </span>
-                      </div>
-                      {/* Checkbox */}
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
-                        isSelected ? "bg-mint-600 border-mint-600" : "border-gray-300"
-                      }`}>
-                        {isSelected && (
-                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </div>
-                    </div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">{flow.name}</h3>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <span>{flow.emailCount} emails</span>
-                    </div>
+            {/* Voice */}
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Brand voice</div>
+              <p className="text-sm text-gray-900 mb-3">
+                <span className="capitalize font-medium">{analysis.brandVoice.tone}</span>
+                {analysis.brandVoice.style ? <>, <span className="capitalize">{analysis.brandVoice.style}</span></> : null}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {analysis.brandVoice.personality.slice(0, 5).map((trait, i) => (
+                  <span key={i} className="px-2 py-0.5 rounded-md text-xs bg-mint-50 text-mint-700 capitalize font-medium">{trait}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* Colors */}
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Brand colors</div>
+              <div className="flex gap-3">
+                {([
+                  ["Primary", analysis.brandColors.primary],
+                  ["Secondary", analysis.brandColors.secondary],
+                  ...(analysis.brandColors.accent ? [["Accent", analysis.brandColors.accent] as [string, string]] : []),
+                ] as [string, string][]).map(([label, hex]) => (
+                  <div key={label} className="text-center">
+                    <div className="w-12 h-12 rounded-lg border border-gray-200 shadow-inner mb-1" style={{ backgroundColor: hex }}></div>
+                    <div className="text-[10px] text-gray-500">{label}</div>
+                    <div className="text-[10px] font-mono text-gray-700">{hex}</div>
                   </div>
-                  <p className="text-gray-600 mb-4 text-sm leading-relaxed">{flow.description}</p>
-                  <button
-                    className="text-sm text-mint-600 hover:text-mint-700 font-medium"
-                    onClick={(e) => { e.stopPropagation(); handlePreviewEmail(flow); }}
-                  >
-                    Preview email &rarr;
-                  </button>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            </div>
+
+            {/* Images we grabbed */}
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Images from your site</div>
+              {hasImages ? (
+                <>
+                  <div className="flex gap-3">
+                    {images?.logo && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={images.logo} alt="logo" className="h-12 rounded border border-gray-200 object-contain bg-white" />
+                    )}
+                    {images?.hero && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={images.hero} alt="hero" className="h-12 rounded border border-gray-200 object-cover" />
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">We&apos;ll use these in your emails.</p>
+                </>
+              ) : (
+                <p className="text-sm text-gray-500">No brand images detected — emails will be text-led.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Quiet "what we read" line — never lead with a zero, only show >0 counts */}
+          <div className="mt-5 pt-4 border-t border-gray-100 text-xs text-gray-400 flex flex-wrap gap-x-4 gap-y-1">
+            <span>Business model: <span className="text-gray-600 font-medium">{analysis.businessModel}</span></span>
+            {analysis.sourcesAnalyzed?.productsCount > 0 && <span>Read {analysis.sourcesAnalyzed.productsCount} products</span>}
+            {analysis.sourcesAnalyzed?.blogsCount > 0 && <span>Read {analysis.sourcesAnalyzed.blogsCount} blog posts</span>}
+            {analysis.sourcesAnalyzed?.hasAboutPage && <span>Read your About page</span>}
           </div>
         </div>
 
-        {/* Generate All Button / Progress / Complete */}
-        {!batchComplete && !batchGenerating && (
-          <div className="bg-gradient-to-br from-mint-600 to-mint-800 rounded-2xl p-8 text-center text-white shadow-xl mb-12">
-            <h2 className="text-3xl font-bold mb-3">Generate All Selected Flows</h2>
-            <p className="text-lg mb-6 opacity-90">
-              {selectedFlows.size > 0
-                ? `${selectedFlows.size} flow${selectedFlows.size !== 1 ? "s" : ""}, ${totalSelectedEmails} emails for ${PLATFORMS.find((p) => p.id === selectedPlatform)?.name}`
-                : "Select flows above to get started"
-              }
-            </p>
-            {user ? (
-              <button
-                onClick={handleGenerateAll}
-                disabled={selectedFlows.size === 0}
-                className="bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed text-lg"
-              >
-                Generate {totalSelectedEmails} Emails
-              </button>
-            ) : (
-              <Link
-                href={`/signup?redirectTo=${encodeURIComponent(`/results?id=${analysisId}`)}`}
-                className="inline-block bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl text-lg"
-              >
-                Create Free Account & Generate
-              </Link>
+        {/* ============ THE WOW: one email, instantly ============ */}
+        {!batchGenerating && !batchComplete && (
+          <div className="mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Your first email{activeFlow ? `: ${activeFlow.name}` : ""}</h2>
+                <p className="text-gray-600 text-sm">Generated from your brand, ready for {PLATFORMS.find((p) => p.id === selectedPlatform)?.name}.</p>
+              </div>
+              {/* Compact platform / format controls */}
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={selectedPlatform}
+                  onChange={(e) => setSelectedPlatform(e.target.value)}
+                  className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800"
+                  aria-label="Email platform"
+                >
+                  {PLATFORMS.map((p) => (
+                    <option key={p.id} value={p.id}>{p.id === "ghl" ? `${p.name} (recommended)` : p.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={selectedFormat}
+                  onChange={(e) => setSelectedFormat(e.target.value as "html" | "plain")}
+                  className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800"
+                  aria-label="Format"
+                >
+                  <option value="html">HTML</option>
+                  <option value="plain">Plain text</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border-2 border-mint-300 shadow-sm overflow-hidden">
+              {sampleGenerating ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <div className="inline-block w-10 h-10 border-4 border-gray-200 border-t-mint-600 rounded-full animate-spin mb-4"></div>
+                  <p className="text-lg font-medium text-gray-900">Writing your first email…</p>
+                  <p className="text-sm text-gray-500 mt-1">About 10 seconds</p>
+                </div>
+              ) : sampleError ? (
+                <div className="text-center py-12 px-6">
+                  <p className="text-gray-700 mb-4">{sampleError}</p>
+                  <button onClick={() => setSampleNonce((n) => n + 1)} className="bg-mint-600 text-white font-semibold py-2.5 px-6 rounded-lg hover:bg-mint-700 transition-colors">
+                    Regenerate
+                  </button>
+                </div>
+              ) : sampleEmail ? (
+                <div>
+                  <div className="px-6 py-4 border-b border-gray-100 space-y-2">
+                    <div>
+                      <span className="text-[10px] font-semibold text-gray-400 uppercase">Subject</span>
+                      <p className="font-semibold text-gray-900">{sampleEmail.subject}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-semibold text-gray-400 uppercase">Preheader</span>
+                      <p className="text-sm text-gray-600">{sampleEmail.preheader}</p>
+                    </div>
+                  </div>
+                  <div className="px-6 py-5 max-h-[28rem] overflow-y-auto bg-gray-50">
+                    {sampleEmail.format === "html" ? (
+                      <div className="prose prose-sm max-w-none bg-white rounded-lg p-5 border border-gray-100" dangerouslySetInnerHTML={{ __html: sampleEmail.body }} />
+                    ) : (
+                      <pre className="whitespace-pre-wrap font-sans text-sm text-gray-900">{sampleEmail.body}</pre>
+                    )}
+                  </div>
+                  <div className="px-6 py-4 border-t border-gray-100 flex flex-wrap gap-3">
+                    <button onClick={handleCopyEmail} className="text-sm font-medium text-gray-700 border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
+                      {copySuccess ? <><span>&#10003;</span> Copied!</> : "Copy"}
+                    </button>
+                    <button onClick={() => setSampleNonce((n) => n + 1)} className="text-sm font-medium text-gray-700 border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors">
+                      Regenerate
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Up next: the rest of this flow as a dimmed roadmap */}
+            {restCount > 0 && (
+              <div className="mt-5">
+                <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Up next in this flow</div>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {Array.from({ length: restCount }).map((_, i) => (
+                    <div key={i} className="bg-white border border-dashed border-gray-300 rounded-xl p-4 opacity-60">
+                      <div className="text-sm font-semibold text-gray-700">Email {i + 2}</div>
+                      <div className="text-xs text-gray-400">Generates when you continue</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
-            {!user && (
-              <p className="text-sm mt-4 opacity-75">
-                Free account required to save your templates — takes 10 seconds
+
+            {/* Primary CTA */}
+            <div className="mt-6 bg-gradient-to-br from-mint-600 to-mint-800 rounded-2xl p-8 text-center text-white shadow-xl">
+              <h3 className="text-2xl font-bold mb-2">Love it? Generate the rest of this flow</h3>
+              <p className="opacity-90 mb-5">
+                {restCount > 0
+                  ? `${restCount} more email${restCount !== 1 ? "s" : ""} in ${activeFlow?.name}`
+                  : `${activeFlow?.name} is a single-email flow`}
               </p>
+              {user ? (
+                <button
+                  onClick={handleGenerateRest}
+                  disabled={!activeFlow}
+                  className="bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed text-lg"
+                >
+                  Generate the rest of this flow &rarr;
+                </button>
+              ) : (
+                <>
+                  <Link
+                    href={`/signup?redirectTo=${encodeURIComponent(`/results?id=${analysisId}`)}`}
+                    className="inline-block bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl text-lg"
+                  >
+                    Create free account &amp; continue &rarr;
+                  </Link>
+                  <p className="text-sm mt-4 opacity-75">Free account to save your flow — takes 10 seconds</p>
+                </>
+              )}
+            </div>
+
+            {/* Secondary: pivot to a different flow */}
+            {otherFlows.length > 0 && (
+              <div className="mt-8">
+                <div className="text-sm font-semibold text-gray-700 mb-3">Or start with a different flow</div>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {otherFlows.map((flow) => (
+                    <button
+                      key={flow.id}
+                      onClick={() => setActiveFlow(flow)}
+                      className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-mint-400 hover:ring-2 hover:ring-mint-50 transition-all"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-gray-900 text-sm">{flow.name}</span>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          flow.priority === "Critical" ? "bg-red-100 text-red-700" :
+                          flow.priority === "High" ? "bg-orange-100 text-orange-700" :
+                          "bg-gray-100 text-gray-700"
+                        }`}>{flow.priority}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 line-clamp-2">{flow.description}</p>
+                      <span className="text-xs text-mint-600 font-medium mt-2 inline-block">Generate this flow instead &rarr;</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}
 
+        {/* ============ Generating the rest ============ */}
         {batchGenerating && (
           <div className="bg-white rounded-2xl border-2 border-mint-500 p-12 text-center shadow-lg mb-12">
             <div className="inline-block w-16 h-16 border-4 border-gray-200 border-t-mint-600 rounded-full animate-spin mb-6"></div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Generating Your Email Flows</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Writing the rest of {activeFlow?.name}</h2>
             <div className="max-w-md mx-auto">
               <div className="w-full h-6 bg-gray-200 rounded-full overflow-hidden mb-3">
                 <div
@@ -539,10 +579,10 @@ function ResultsPage() {
                   {batchProgress.completed}/{batchProgress.total}
                 </div>
               </div>
-              {batchProgress.currentFlow && (
-                <p className="text-gray-600">Currently generating: <strong>{batchProgress.currentFlow}</strong></p>
+              {/* Only show the live flow name once it's a real value (never "0"). */}
+              {batchProgress.currentFlow && batchProgress.currentFlow !== "0" && (
+                <p className="text-gray-600">Writing: <strong>{batchProgress.currentFlow}</strong></p>
               )}
-              <p className="text-sm text-gray-500 mt-2">All flows generate in parallel — usually under 2 minutes total</p>
               <button
                 onClick={() => {
                   if (pollRef.current) clearInterval(pollRef.current);
@@ -565,15 +605,12 @@ function ResultsPage() {
             <p className="text-red-700 font-medium mb-3">{batchError}</p>
             <div className="flex gap-3 justify-center">
               <button
-                onClick={() => { setBatchError(null); handleGenerateAll(); }}
+                onClick={() => { setBatchError(null); handleGenerateRest(); }}
                 className="bg-mint-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-mint-700 transition-colors"
               >
                 Try Again
               </button>
-              <a
-                href="/templates"
-                className="bg-white text-gray-700 font-medium py-2 px-6 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
-              >
+              <a href="/templates" className="bg-white text-gray-700 font-medium py-2 px-6 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors">
                 Check Templates
               </a>
             </div>
@@ -587,141 +624,52 @@ function ResultsPage() {
             </svg>
             <h2 className="text-3xl font-bold text-gray-900 mb-3">All done!</h2>
             <p className="text-lg text-gray-600 mb-6">
-              {batchProgress.completed} emails generated across {selectedFlows.size} flows.
+              {batchProgress.completed} email{batchProgress.completed !== 1 ? "s" : ""} ready in {activeFlow?.name}.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a
-                href="/templates"
-                className="bg-mint-600 text-white font-bold py-4 px-8 rounded-lg hover:bg-mint-700 transition-colors shadow-lg text-lg"
-              >
-                View Your Templates
+              <a href="/templates" className="bg-mint-600 text-white font-bold py-4 px-8 rounded-lg hover:bg-mint-700 transition-colors shadow-lg text-lg">
+                View &amp; push your templates &rarr;
               </a>
             </div>
-            {/* Purchase CTAs */}
-            <div className="mt-8 pt-6 border-t border-mint-200">
-              <p className="text-sm text-gray-600 mb-4">Ready to export? Choose a plan:</p>
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <button
-                  onClick={() => {
-                    analytics.beginCheckout('single_flow', 29);
-                    if (!user) { router.push('/signup'); return; }
-                    fetch('/api/checkout', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ purchaseType: 'single_flow', analysisId, flowId: Array.from(selectedFlows)[0] }),
-                    }).then(r => r.json()).then(d => { if (d.url) window.location.href = d.url; });
-                  }}
-                  className="bg-white text-gray-700 font-semibold py-3 px-6 rounded-lg border-2 border-gray-200 hover:border-mint-300 transition-colors"
-                >
-                  Single Flow — $29
-                </button>
-                <button
-                  onClick={() => {
-                    analytics.beginCheckout('full_campaign', 79);
-                    if (!user) { router.push('/signup'); return; }
-                    fetch('/api/checkout', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ purchaseType: 'full_campaign', analysisId }),
-                    }).then(r => r.json()).then(d => { if (d.url) window.location.href = d.url; });
-                  }}
-                  className="bg-mint-700 text-white font-semibold py-3 px-6 rounded-lg hover:bg-mint-800 transition-colors"
-                >
-                  All Flows — $79 (Best Value)
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Brand Details */}
-        <div className="grid md:grid-cols-2 gap-6 mb-12">
-          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Business Overview</h3>
-            <div className="space-y-4">
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Business Model</div>
-                <div className="text-base font-medium text-gray-900">{analysis.businessModel}</div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Target Audience</div>
-                <div className="text-base text-gray-900">{analysis.targetAudience}</div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Value Proposition</div>
-                <div className="text-base text-gray-900">{analysis.valueProposition}</div>
-              </div>
-              {analysis.productCategories?.length > 0 && (
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Product Categories</div>
-                  <div className="flex flex-wrap gap-2">
-                    {analysis.productCategories.map((cat, i) => (
-                      <span key={i} className="px-2.5 py-1 rounded-md text-sm bg-gray-100 text-gray-700 capitalize">{cat}</span>
-                    ))}
-                  </div>
+            {beta ? (
+              <p className="text-sm text-gray-500 mt-6">You&apos;re in the beta — generating, editing, and pushing are all unlocked.</p>
+            ) : (
+              <div className="mt-8 pt-6 border-t border-mint-200">
+                <p className="text-sm text-gray-600 mb-4">Ready to export? Choose a plan:</p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={() => {
+                      analytics.beginCheckout('single_flow', 29);
+                      if (!user) { router.push('/signup'); return; }
+                      fetch('/api/checkout', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ purchaseType: 'single_flow', analysisId, flowId: activeFlow?.id }),
+                      }).then(r => r.json()).then(d => { if (d.url) window.location.href = d.url; });
+                    }}
+                    className="bg-white text-gray-700 font-semibold py-3 px-6 rounded-lg border-2 border-gray-200 hover:border-mint-300 transition-colors"
+                  >
+                    Single Flow — $29
+                  </button>
+                  <button
+                    onClick={() => {
+                      analytics.beginCheckout('full_campaign', 79);
+                      if (!user) { router.push('/signup'); return; }
+                      fetch('/api/checkout', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ purchaseType: 'full_campaign', analysisId }),
+                      }).then(r => r.json()).then(d => { if (d.url) window.location.href = d.url; });
+                    }}
+                    className="bg-mint-700 text-white font-semibold py-3 px-6 rounded-lg hover:bg-mint-800 transition-colors"
+                  >
+                    All Flows — $79 (Best Value)
+                  </button>
                 </div>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Brand Voice & Tone</h3>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Tone</div>
-                  <div className="text-base font-medium text-gray-900 capitalize">{analysis.brandVoice.tone}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Style</div>
-                  <div className="text-base font-medium text-gray-900 capitalize">{analysis.brandVoice.style}</div>
-                </div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Personality Traits</div>
-                <div className="flex flex-wrap gap-2">
-                  {analysis.brandVoice.personality.map((trait, i) => (
-                    <span key={i} className="px-2.5 py-1 rounded-md text-sm bg-mint-50 text-mint-700 capitalize font-medium">{trait}</span>
-                  ))}
-                </div>
-              </div>
-              {analysis.brandVoice.keyPhrases?.length > 0 && (
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Key Phrases</div>
-                  <div className="flex flex-wrap gap-2">
-                    {analysis.brandVoice.keyPhrases.slice(0, 3).map((phrase, i) => (
-                      <span key={i} className="px-2.5 py-1 rounded-md text-sm bg-purple-50 text-purple-700">&ldquo;{phrase}&rdquo;</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Brand Colors */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm mb-12">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Brand Colors</h3>
-          <div className="flex gap-6">
-            <div className="flex-1">
-              <div className="w-full h-32 rounded-lg border-2 border-gray-200 shadow-inner mb-2" style={{ backgroundColor: analysis.brandColors.primary }}></div>
-              <div className="text-sm text-gray-600">Primary</div>
-              <div className="text-sm font-mono font-semibold text-gray-900">{analysis.brandColors.primary}</div>
-            </div>
-            <div className="flex-1">
-              <div className="w-full h-32 rounded-lg border-2 border-gray-200 shadow-inner mb-2" style={{ backgroundColor: analysis.brandColors.secondary }}></div>
-              <div className="text-sm text-gray-600">Secondary</div>
-              <div className="text-sm font-mono font-semibold text-gray-900">{analysis.brandColors.secondary}</div>
-            </div>
-            {analysis.brandColors.accent && (
-              <div className="flex-1">
-                <div className="w-full h-32 rounded-lg border-2 border-gray-200 shadow-inner mb-2" style={{ backgroundColor: analysis.brandColors.accent }}></div>
-                <div className="text-sm text-gray-600">Accent</div>
-                <div className="text-sm font-mono font-semibold text-gray-900">{analysis.brandColors.accent}</div>
               </div>
             )}
           </div>
-        </div>
+        )}
       </main>
 
       {/* Footer */}
@@ -738,80 +686,6 @@ function ResultsPage() {
           </div>
         </div>
       </footer>
-
-      {/* Email Preview Modal */}
-      {showEmailModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-8 py-6 flex items-center justify-between rounded-t-2xl">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900">{selectedFlow?.name}</h3>
-                <p className="text-sm text-gray-600 mt-1">Email #1 preview (of {selectedFlow?.emailCount})</p>
-              </div>
-              <button onClick={closeModal} className="text-gray-400 hover:text-gray-600 transition-colors">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="px-8 py-6">
-              {!generating && !generatedEmail && (
-                <div className="text-center py-8">
-                  <p className="text-gray-600 mb-4">Preview the first email in this flow</p>
-                  <button
-                    onClick={handleStartPreview}
-                    className="bg-mint-600 text-white font-semibold py-3 px-8 rounded-lg hover:bg-mint-700 transition-colors"
-                  >
-                    Generate Preview
-                  </button>
-                </div>
-              )}
-
-              {generating && (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <div className="inline-block w-12 h-12 border-4 border-gray-200 border-t-mint-600 rounded-full animate-spin mb-4"></div>
-                  <p className="text-lg font-medium text-gray-900 mb-2">Generating preview...</p>
-                  <p className="text-sm text-gray-600">10-20 seconds</p>
-                </div>
-              )}
-
-              {generatedEmail && !generating && (
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Subject Line</label>
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
-                      <p className="font-medium text-gray-900">{generatedEmail.subject}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Preheader Text</label>
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
-                      <p className="text-gray-700">{generatedEmail.preheader}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Email Body</label>
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 max-h-96 overflow-y-auto">
-                      {generatedEmail.format === "html" ? (
-                        <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: generatedEmail.body }} />
-                      ) : (
-                        <pre className="whitespace-pre-wrap font-sans text-sm text-gray-900">{generatedEmail.body}</pre>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleCopyEmail}
-                    className="w-full bg-mint-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-mint-700 transition-all flex items-center justify-center gap-2"
-                  >
-                    {copySuccess ? <><span>&#10003;</span> Copied!</> : "Copy to Clipboard"}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

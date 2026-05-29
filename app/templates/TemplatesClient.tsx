@@ -57,8 +57,6 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
   const [expandedFlow, setExpandedFlow] = useState<string | null>(null);
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
-  const [exportingFlow, setExportingFlow] = useState<string | null>(null);
-  const [exportingAll, setExportingAll] = useState(false);
 
   // AI Edit state
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
@@ -96,6 +94,50 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
     pushed: number;
     failed: number;
   } | null>(null);
+
+  // Connected locations live in state so a just-in-time connect shows up
+  // immediately without a page refresh.
+  const [connections, setConnections] = useState<GhlConnection[]>(ghlConnections);
+
+  // Just-in-time "Connect to GoHighLevel" state (inside the push modal).
+  const [showConnect, setShowConnect] = useState(false);
+  const [connectInput, setConnectInput] = useState("");
+  const [connectToken, setConnectToken] = useState("");
+  const [connectStatus, setConnectStatus] = useState<"idle" | "testing" | "connected" | "failed">("idle");
+  const [connectError, setConnectError] = useState("");
+  const [connectedName, setConnectedName] = useState("");
+
+  async function handleConnectGhl() {
+    const token = connectToken.trim().replace(/^Bearer\s+/i, "");
+    const input = connectInput.trim();
+    if (!input || !token) return;
+    setConnectStatus("testing");
+    setConnectError("");
+    try {
+      const res = await fetch("/api/settings/ghl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locationInput: input, pitToken: token }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Couldn't connect to GoHighLevel");
+      const conn = data.connection;
+      const newConn: GhlConnection = {
+        id: conn.id,
+        location_id: conn.location_id,
+        location_label: conn.location_label,
+      };
+      setConnections((prev) => [newConn, ...prev.filter((c) => c.location_id !== conn.location_id)]);
+      setGhlPushLocationId(conn.location_id);
+      setConnectedName(data.locationName || conn.location_label || conn.location_id);
+      setConnectStatus("connected");
+      setConnectToken("");
+      setConnectInput("");
+    } catch (err: any) {
+      setConnectStatus("failed");
+      setConnectError(err.message || "Couldn't connect to GoHighLevel");
+    }
+  }
 
   async function handlePushToGhl() {
     if (!ghlPushModal || !ghlPushLocationId) return;
@@ -189,69 +231,6 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
     setTimeout(() => setCopySuccess(null), 2000);
   };
 
-  const handleDownloadHTML = (template: EmailTemplate) => {
-    const blob = new Blob([template.body], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${template.flow_id}-email-${template.email_number}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleExportFlow = async (group: FlowGroup) => {
-    analytics.exportContent('zip_single_flow');
-    setExportingFlow(group.flowId);
-    try {
-      const res = await fetch("/api/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          flowIds: [group.flowId],
-          analysisId: group.analysisId,
-        }),
-      });
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `flowmint-${group.flowId}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      alert("Failed to export. Please try again.");
-    } finally {
-      setExportingFlow(null);
-    }
-  };
-
-  const handleExportAll = async () => {
-    analytics.exportContent('zip_all_flows');
-    setExportingAll(true);
-    try {
-      const flowIds = flowGroups.filter((g) => canExportThisFlow(g)).map((g) => g.flowId);
-      const analysisId = flowGroups[0]?.analysisId;
-      const res = await fetch("/api/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ flowIds, analysisId }),
-      });
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "flowmint-templates.zip";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      alert("Failed to export. Please try again.");
-    } finally {
-      setExportingAll(false);
-    }
-  };
-
   const handleAIEdit = async (templateId: string) => {
     if (!editPrompt.trim()) return;
     setEditLoading(true);
@@ -328,16 +307,16 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
 
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-y-3">
           <a href="/" className="text-2xl font-bold text-mint-700">FlowMint</a>
-          <nav className="flex items-center gap-6">
+          <nav className="flex items-center gap-4 sm:gap-6 flex-wrap">
             <a href="/dashboard" className="text-sm text-gray-600 hover:text-gray-900">Dashboard</a>
             <a href="/templates" className="text-sm text-mint-600 font-medium">Templates</a>
             <a href="/settings" className="text-sm text-gray-600 hover:text-gray-900">Settings</a>
             <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-              hasPaid ? "bg-mint-100 text-mint-700" : "bg-gray-100 text-gray-600"
+              betaOpenAccess ? "bg-amber-100 text-amber-700" : hasPaid ? "bg-mint-100 text-mint-700" : "bg-gray-100 text-gray-600"
             }`}>
-              {planLabel}
+              {betaOpenAccess ? "Beta" : planLabel}
             </span>
             <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-900">
               Sign out
@@ -363,7 +342,7 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
         )}
 
         {/* GHL not connected banner */}
-        {flowGroups.length > 0 && ghlConnections.length === 0 && (
+        {flowGroups.length > 0 && connections.length === 0 && (
           <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-start gap-3">
             <div className="text-blue-700 mt-0.5">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -385,16 +364,8 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
             <p className="text-gray-600 mt-1">
               {templates.length} template{templates.length !== 1 ? "s" : ""} across {flowGroups.length} flow{flowGroups.length !== 1 ? "s" : ""}
             </p>
+            <p className="text-sm text-gray-400 mt-1">Tap a flow to expand, then any email to preview the full message or AI-edit it.</p>
           </div>
-          {flowGroups.some((g) => canExportThisFlow(g)) && flowGroups.length > 0 && (
-            <button
-              onClick={handleExportAll}
-              disabled={exportingAll}
-              className="bg-mint-600 text-white font-medium px-6 py-3 rounded-lg hover:bg-mint-700 transition-colors disabled:opacity-50"
-            >
-              {exportingAll ? "Exporting..." : "Download All as ZIP"}
-            </button>
-          )}
         </div>
 
         {/* Empty state */}
@@ -431,10 +402,10 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
                     <div>
                       <h3 className="text-lg font-bold text-gray-900 text-left">{group.flowName}</h3>
                       <p className="text-sm text-gray-500">
-                        {group.templates.length} email{group.templates.length !== 1 ? "s" : ""} &middot; {group.platform}
+                        {group.templates.length} email{group.templates.length !== 1 ? "s" : ""} &middot; {group.platform === "ghl" ? "GoHighLevel" : group.platform}
                       </p>
                     </div>
-                    {canExport && (
+                    {canExport && !betaOpenAccess && (
                       <span className="text-xs font-medium px-2 py-1 rounded bg-mint-100 text-mint-700">
                         Purchased
                       </span>
@@ -443,43 +414,26 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
                   <div className="flex items-center gap-3">
                     {canExport ? (
                       <>
-                        {ghlConnections.length > 0 ? (
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setGhlPushError("");
-                              setGhlPushModal({
-                                flowId: group.flowId,
-                                flowName: group.flowName,
-                                analysisId: group.analysisId,
-                                templateIds: group.templates.map((t) => t.id),
-                              });
-                            }}
-                            className="inline-flex items-center gap-1.5 text-sm text-mint-600 hover:text-mint-700 font-medium cursor-pointer"
-                          >
-                            Push to
-                            <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-ghl-50 text-ghl-700 ring-1 ring-ghl-200">
-                              GHL
-                            </span>
-                          </span>
-                        ) : (
-                          <a
-                            href="/settings"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-mint-700 font-medium"
-                          >
-                            Connect
-                            <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-ghl-50 text-ghl-700 ring-1 ring-ghl-200">
-                              GHL
-                            </span>
-                            to push
-                          </a>
-                        )}
                         <span
-                          onClick={(e) => { e.stopPropagation(); handleExportFlow(group); }}
-                          className="text-sm text-gray-600 hover:text-gray-900 font-medium cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setGhlPushError("");
+                            setShowConnect(connections.length === 0);
+                            setConnectStatus("idle");
+                            setGhlPushModal({
+                              flowId: group.flowId,
+                              flowName: group.flowName,
+                              analysisId: group.analysisId,
+                              templateIds: group.templates.map((t) => t.id),
+                            });
+                          }}
+                          className="inline-flex items-center gap-1.5 text-sm text-mint-600 hover:text-mint-700 font-medium cursor-pointer"
                         >
-                          {exportingFlow === group.flowId ? "Exporting..." : "Download ZIP"}
+                          {connections.length > 0 ? "Push to" : "Connect"}
+                          <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-ghl-50 text-ghl-700 ring-1 ring-ghl-200">
+                            GHL
+                          </span>
+                          {connections.length > 0 ? null : "to push"}
                         </span>
                       </>
                     ) : (
@@ -529,12 +483,6 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
                                   className="text-xs font-medium px-3 py-1.5 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
                                 >
                                   {copySuccess === template.id ? "Copied!" : "Copy"}
-                                </button>
-                                <button
-                                  onClick={() => handleDownloadHTML(template)}
-                                  className="text-xs font-medium px-3 py-1.5 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
-                                >
-                                  Download
                                 </button>
                                 {hasAnyPurchaseClient(purchases, isUnlimited) && (
                                   <button
@@ -738,85 +686,145 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
         </div>
       )}
 
-      {/* Push-to-GHL Modal */}
-      {ghlPushModal && (
+      {/* Push / Connect to GoHighLevel Modal */}
+      {ghlPushModal && (() => {
+        const inConnectMode = showConnect || connections.length === 0;
+        const closeModal = () => { setGhlPushModal(null); setShowConnect(false); setConnectStatus("idle"); setConnectError(""); };
+        return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <h3 className="text-xl font-bold text-gray-900">Push to GHL</h3>
+                <h3 className="text-xl font-bold text-gray-900">{inConnectMode ? "Connect to" : "Push to"}</h3>
                 <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-ghl-50 text-ghl-700 ring-1 ring-ghl-200">
                   GoHighLevel
                 </span>
               </div>
-              <button
-                onClick={() => setGhlPushModal(null)}
-                className="text-gray-400 hover:text-gray-600"
-                aria-label="Close"
-              >
+              <button onClick={closeModal} className="text-gray-400 hover:text-gray-600" aria-label="Close">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
-            <p className="text-sm text-gray-600 mb-5">
-              Push <strong>{ghlPushModal.templateIds.length}</strong> email{ghlPushModal.templateIds.length !== 1 ? "s" : ""} from <strong>{ghlPushModal.flowName}</strong> into a connected GHL location. You&apos;ll wire them into a workflow inside GHL after.
-            </p>
+            {inConnectMode ? (
+              /* ---- Just-in-time connect: token + location → live test ---- */
+              <div>
+                {connectStatus === "connected" ? (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-5">
+                    <div className="flex items-center gap-2 text-green-800 font-semibold">
+                      <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                      Connected to {connectedName}
+                    </div>
+                    <p className="text-sm text-green-700 mt-1">Your token works. You can push your emails now.</p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Paste a GoHighLevel <strong>Private Integration Token</strong> and your sub-account. We&apos;ll test it against GHL before saving.
+                    </p>
+                    <details className="mb-4 text-sm">
+                      <summary className="cursor-pointer text-mint-700 font-medium">Where do I get a token?</summary>
+                      <ol className="list-decimal list-inside text-gray-600 mt-2 space-y-1">
+                        <li>In GHL: <strong>Settings → Private Integrations</strong> (enable it in Labs first if you don&apos;t see it).</li>
+                        <li>Create an integration called <strong>FlowMint</strong>.</li>
+                        <li>Check the scopes <strong>View Locations</strong> and <strong>Edit / Write Emails</strong>.</li>
+                        <li>Copy the token &mdash; GHL only shows it once &mdash; and paste it below.</li>
+                      </ol>
+                    </details>
 
-            {ghlConnections.length === 0 ? (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-900">
-                You don&apos;t have any connected GHL locations yet.{" "}
-                <a href="/settings" className="font-medium underline">
-                  Connect one in Settings
-                </a>
-                .
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Your GHL sub-account (URL or location ID)</label>
+                    <input
+                      value={connectInput}
+                      onChange={(e) => setConnectInput(e.target.value)}
+                      placeholder="https://app.gohighlevel.com/location/abc123/… or abc123"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-mint-300"
+                    />
+
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Private Integration Token</label>
+                    <input
+                      type="password"
+                      value={connectToken}
+                      onChange={(e) => setConnectToken(e.target.value.trim())}
+                      placeholder="pit-…"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-mint-300"
+                    />
+
+                    {connectStatus === "failed" && connectError && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-700">{connectError}</div>
+                    )}
+
+                    <button
+                      onClick={handleConnectGhl}
+                      disabled={connectStatus === "testing" || !connectInput.trim() || !connectToken.trim()}
+                      className="w-full bg-mint-600 text-white font-medium py-3 rounded-lg hover:bg-mint-700 transition-colors disabled:opacity-50"
+                    >
+                      {connectStatus === "testing" ? "Testing connection…" : "Test & connect"}
+                    </button>
+                  </>
+                )}
+
+                {connections.length > 0 && (
+                  <button
+                    onClick={() => setShowConnect(false)}
+                    className="w-full mt-3 text-sm font-medium text-mint-600 hover:text-mint-700"
+                  >
+                    {connectStatus === "connected" ? "Continue to push →" : "Use an existing connection"}
+                  </button>
+                )}
               </div>
             ) : (
-              <div className="mb-5">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Target location
-                </label>
-                <select
-                  value={ghlPushLocationId}
-                  onChange={(e) => setGhlPushLocationId(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-mint-300 focus:border-mint-500"
+              /* ---- Push to a connected location ---- */
+              <>
+                <p className="text-sm text-gray-600 mb-5">
+                  Push <strong>{ghlPushModal.templateIds.length}</strong> email{ghlPushModal.templateIds.length !== 1 ? "s" : ""} from <strong>{ghlPushModal.flowName}</strong> into a connected GHL location. You&apos;ll wire them into a workflow inside GHL after.
+                </p>
+
+                <div className="mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Target location</label>
+                  <select
+                    value={ghlPushLocationId}
+                    onChange={(e) => setGhlPushLocationId(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-mint-300 focus:border-mint-500"
+                  >
+                    {connections.map((c) => (
+                      <option key={c.id} value={c.location_id}>
+                        {c.location_label || c.location_id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={() => { setShowConnect(true); setConnectStatus("idle"); setConnectError(""); }}
+                  className="text-sm text-mint-600 hover:text-mint-700 font-medium mb-5"
                 >
-                  {ghlConnections.map((c) => (
-                    <option key={c.id} value={c.location_id}>
-                      {c.location_label || c.location_id}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  + Connect another location
+                </button>
+
+                {ghlPushError && <p className="text-red-600 text-sm mb-4">{ghlPushError}</p>}
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handlePushToGhl}
+                    disabled={ghlPushing || !ghlPushLocationId}
+                    className="flex-1 bg-mint-600 text-white font-medium py-3 rounded-lg hover:bg-mint-700 transition-colors disabled:opacity-50"
+                  >
+                    {ghlPushing ? "Pushing..." : "Push to GHL"}
+                  </button>
+                  <button onClick={closeModal} className="px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900">
+                    Cancel
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-500 text-center mt-4">
+                  Templates land in your GHL email-templates list. You wire them into a workflow manually inside GHL.
+                </p>
+              </>
             )}
-
-            {ghlPushError && (
-              <p className="text-red-600 text-sm mb-4">{ghlPushError}</p>
-            )}
-
-            <div className="flex gap-3">
-              <button
-                onClick={handlePushToGhl}
-                disabled={ghlPushing || ghlConnections.length === 0 || !ghlPushLocationId}
-                className="flex-1 bg-mint-600 text-white font-medium py-3 rounded-lg hover:bg-mint-700 transition-colors disabled:opacity-50"
-              >
-                {ghlPushing ? "Pushing..." : "Push to GHL"}
-              </button>
-              <button
-                onClick={() => setGhlPushModal(null)}
-                className="px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900"
-              >
-                Cancel
-              </button>
-            </div>
-
-            <p className="text-xs text-gray-500 text-center mt-4">
-              Templates land in your GHL email-templates list. You wire them into a workflow manually inside GHL.
-            </p>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* GHL push success toast */}
       {ghlPushResult && (
