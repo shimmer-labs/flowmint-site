@@ -111,9 +111,12 @@ function ResultsPage() {
       const parsed = JSON.parse(cachedData);
       setAnalysis(parsed.analysis);
       setSiteName(parsed.scrapedData?.siteName || "Your Brand");
-      // Auto-pick the top recommended flow as the default sample. No selection
-      // required to see the wow.
-      setActiveFlow(parsed.analysis.recommendedFlows?.[0] ?? null);
+      // Pick the flow from the URL (?flow=) if present — preserves the user's
+      // selection across the signup round-trip — otherwise default to the top pick.
+      const flows: FlowRecommendation[] = parsed.analysis.recommendedFlows ?? [];
+      const flowParam = searchParams.get("flow");
+      const fromUrl = flowParam ? flows.find((f) => f.id === flowParam) : null;
+      setActiveFlow(fromUrl ?? flows[0] ?? null);
       setLoading(false);
       analytics.viewResults(analysisId!, parsed.analysis.businessModel);
     } else {
@@ -128,6 +131,22 @@ function ResultsPage() {
   useEffect(() => {
     if (!analysis || !activeFlow) return;
     const reqId = ++sampleReqId.current;
+
+    // Cache previewed samples so switching flows (or returning after signup)
+    // doesn't re-burn a generation. Regenerate clears the key first (see below).
+    const cacheKey = `sample-${analysisId}-${activeFlow.id}-${selectedPlatform}-${selectedFormat}`;
+    const cached = typeof window !== "undefined" ? sessionStorage.getItem(cacheKey) : null;
+    if (cached) {
+      try {
+        setSampleEmail(JSON.parse(cached));
+        setSampleError(null);
+        setSampleGenerating(false);
+        return;
+      } catch {
+        sessionStorage.removeItem(cacheKey);
+      }
+    }
+
     setSampleGenerating(true);
     setSampleError(null);
     setSampleEmail(null);
@@ -147,7 +166,10 @@ function ResultsPage() {
         });
         if (!res.ok) throw new Error("Failed to generate email");
         const data = await res.json();
-        if (reqId === sampleReqId.current) setSampleEmail(data.email);
+        if (reqId === sampleReqId.current) {
+          setSampleEmail(data.email);
+          try { sessionStorage.setItem(cacheKey, JSON.stringify(data.email)); } catch {}
+        }
       } catch (err) {
         console.error("Sample email error:", err);
         if (reqId === sampleReqId.current) setSampleError("Couldn't write the sample email. Hit Regenerate to try again.");
@@ -157,6 +179,14 @@ function ResultsPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFlow, selectedPlatform, selectedFormat, sampleNonce]);
+
+  // Regenerate = drop the cached sample for the current selection, then re-run.
+  const regenerateSample = () => {
+    if (analysisId && activeFlow) {
+      sessionStorage.removeItem(`sample-${analysisId}-${activeFlow.id}-${selectedPlatform}-${selectedFormat}`);
+    }
+    setSampleNonce((n) => n + 1);
+  };
 
   // If the analysis was run logged-out and the user has since signed in, claim
   // the orphaned (user_id IS NULL) row so it's tied to their account and shows
@@ -457,7 +487,7 @@ function ResultsPage() {
               ) : sampleError ? (
                 <div className="text-center py-12 px-6">
                   <p className="text-gray-700 mb-4">{sampleError}</p>
-                  <button onClick={() => setSampleNonce((n) => n + 1)} className="bg-mint-600 text-white font-semibold py-2.5 px-6 rounded-lg hover:bg-mint-700 transition-colors">
+                  <button onClick={regenerateSample} className="bg-mint-600 text-white font-semibold py-2.5 px-6 rounded-lg hover:bg-mint-700 transition-colors">
                     Regenerate
                   </button>
                 </div>
@@ -484,7 +514,7 @@ function ResultsPage() {
                     <button onClick={handleCopyEmail} className="text-sm font-medium text-gray-700 border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
                       {copySuccess ? <><span>&#10003;</span> Copied!</> : "Copy"}
                     </button>
-                    <button onClick={() => setSampleNonce((n) => n + 1)} className="text-sm font-medium text-gray-700 border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors">
+                    <button onClick={regenerateSample} className="text-sm font-medium text-gray-700 border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors">
                       Regenerate
                     </button>
                   </div>
@@ -526,7 +556,7 @@ function ResultsPage() {
               ) : (
                 <>
                   <Link
-                    href={`/signup?redirectTo=${encodeURIComponent(`/results?id=${analysisId}`)}`}
+                    href={`/signup?redirectTo=${encodeURIComponent(`/results?id=${analysisId}${activeFlow ? `&flow=${activeFlow.id}` : ""}`)}`}
                     className="inline-block bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl text-lg"
                   >
                     Create free account &amp; continue &rarr;
@@ -572,17 +602,25 @@ function ResultsPage() {
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Writing the rest of {activeFlow?.name}</h2>
             <div className="max-w-md mx-auto">
               <div className="w-full h-6 bg-gray-200 rounded-full overflow-hidden mb-3">
-                <div
-                  className="h-full bg-mint-600 transition-all duration-500 flex items-center justify-center text-white text-xs font-semibold"
-                  style={{ width: `${batchProgress.total > 0 ? (batchProgress.completed / batchProgress.total) * 100 : 0}%` }}
-                >
-                  {batchProgress.completed}/{batchProgress.total}
-                </div>
+                {batchProgress.completed === 0 ? (
+                  // Emails generate concurrently, so nothing completes for the
+                  // first ~20s. Show an animated indeterminate bar instead of a
+                  // frozen 0% so it doesn't look stuck.
+                  <div className="h-full w-1/3 bg-mint-400 rounded-full animate-pulse"></div>
+                ) : (
+                  <div
+                    className="h-full bg-mint-600 transition-all duration-500 flex items-center justify-center text-white text-xs font-semibold"
+                    style={{ width: `${batchProgress.total > 0 ? (batchProgress.completed / batchProgress.total) * 100 : 0}%` }}
+                  >
+                    {batchProgress.completed}/{batchProgress.total}
+                  </div>
+                )}
               </div>
-              {/* Only show the live flow name once it's a real value (never "0"). */}
-              {batchProgress.currentFlow && batchProgress.currentFlow !== "0" && (
-                <p className="text-gray-600">Writing: <strong>{batchProgress.currentFlow}</strong></p>
-              )}
+              <p className="text-gray-600">
+                {batchProgress.completed === 0
+                  ? "Warming up the writer…"
+                  : `${batchProgress.completed} of ${batchProgress.total} emails written`}
+              </p>
               <button
                 onClick={() => {
                   if (pollRef.current) clearInterval(pollRef.current);

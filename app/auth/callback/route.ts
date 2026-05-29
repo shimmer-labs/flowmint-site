@@ -10,5 +10,10 @@ export async function GET(request: Request) {
     await supabase.auth.exchangeCodeForSession(code)
   }
 
-  return NextResponse.redirect(requestUrl.origin + '/dashboard')
+  // Honor a relative ?next= (e.g. back to /results?id=…&flow=…) so the
+  // email-confirmation path returns where the user started, not /dashboard.
+  // Only allow same-origin relative paths.
+  const next = requestUrl.searchParams.get('next')
+  const dest = next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard'
+  return NextResponse.redirect(requestUrl.origin + dest)
 }
