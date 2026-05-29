@@ -34,6 +34,10 @@ const MAX_ATTEMPTS = 2;
  * Generate a single email with retry logic
  * Retries once on failure, then returns a failed result (doesn't throw)
  */
+/** Stable across all users and brands. First system block — caches globally. */
+const STABLE_EXPERT_PROMPT =
+  "You are an expert lifecycle marketing email copywriter. Write compelling, conversion-focused emails that match the brand's voice and drive results.\n\nHARD RULES:\n- Never use em dashes (—) anywhere in subject, preheader, or body. Use commas, periods, or rewrite the sentence. This rule has no exceptions.\n- Plain, direct language. No consultant-speak. No marketing buzzwords.";
+
 export async function generateEmail(
   context: EmailGenerationContext,
   attempt: number = 1
@@ -42,12 +46,25 @@ export async function generateEmail(
   console.log(`🤖 Generating ${flow.name} #${emailNumber} (attempt ${attempt})`);
 
   try {
-    const prompt = buildEmailPrompt(context);
-    const emailContent = await callClaude(prompt, {
+    // Split the prompt so the stable per-URL prefix can be cached. See
+    // buildEmailContext (cached across all 54 emails of a campaign) vs
+    // buildEmailUserMessage (varies per email).
+    const cachedContext = buildEmailContext(context);
+    const userPrompt = buildEmailUserMessage(context);
+
+    const emailContent = await callClaude(userPrompt, {
       maxTokens: 2000,
       temperature: 0.8,
-      systemPrompt:
-        "You are an expert lifecycle marketing email copywriter. Write compelling, conversion-focused emails that match the brand's voice and drive results.\n\nHARD RULES:\n- Never use em dashes (—) anywhere in subject, preheader, or body. Use commas, periods, or rewrite the sentence. This rule has no exceptions.\n- Plain, direct language. No consultant-speak. No marketing buzzwords.",
+      systemPrompt: [
+        { type: "text", text: STABLE_EXPERT_PROMPT },
+        {
+          type: "text",
+          text: cachedContext,
+          // Caches the (URL × platform × format) prefix. Subsequent emails for
+          // the same combo read from cache at ~0.1× input price.
+          cache_control: { type: "ephemeral" },
+        },
+      ],
     });
 
     return parseEmailResponse(emailContent, platform, format);
@@ -79,23 +96,22 @@ export async function generateEmail(
 }
 
 /**
- * Build email generation prompt
- * Brand context is included inline (future: move to system prompt with cache_control for prompt caching)
+ * Build the cacheable per-URL × platform × format context block. This is the
+ * stable system-prefix string that gets cache_control attached. All 54 calls
+ * in a full campaign (18 flows × 3 emails) for the same URL/platform/format
+ * combo share this exact prefix; the cache writes on the first call and
+ * reads on the next 53.
  */
-function buildEmailPrompt(context: EmailGenerationContext): string {
-  const { flow, emailNumber, brandAnalysis, platform, format } = context;
-
+function buildEmailContext(context: EmailGenerationContext): string {
+  const { brandAnalysis, platform, format } = context;
   const platformSyntax = getSyntaxInstructions(platform);
-  const flowGuidance = getFlowSpecificGuidance(flow.id, emailNumber, flow.emailCount);
   const hasImages = !!brandAnalysis.images;
   const formatInstructions =
     format === "html"
       ? getHTMLInstructions(hasImages, brandAnalysis.brandColors.primary)
       : getPlainTextInstructions();
 
-  return `You are writing email #${emailNumber} of ${flow.emailCount} for a "${flow.name}" email sequence.
-
-**Brand Context:**
+  return `**Brand Context:**
 - Brand: ${brandAnalysis.sourcesAnalyzed.hasAboutPage ? brandAnalysis.valueProposition : ""}
 - Voice Tone: ${brandAnalysis.brandVoice.tone}
 - Style: ${brandAnalysis.brandVoice.style}
@@ -117,8 +133,6 @@ ${buildImagesSection(brandAnalysis, format)}
 
 ${platformSyntax}
 
-${flowGuidance}
-
 ${formatInstructions}
 
 CRITICAL REQUIREMENTS:
@@ -135,7 +149,24 @@ DO NOT HTML-escape the personalization syntax. Output the curly braces and perce
 ✅ CORRECT: {% if person.first_name %}{{ person.first_name }}{% endif %}
 ❌ WRONG: &#123;% if person.first_name %&#125;&#123;&#123; person.first_name &#125;&#125;&#123;% endif %&#125;
 
-The template syntax MUST be raw so email platforms can process it.
+The template syntax MUST be raw so email platforms can process it.`;
+}
+
+/**
+ * Build the per-email user message. This is the only part that varies between
+ * the 3 emails of one flow (and between flows) — keeps the cached prefix
+ * stable so subsequent calls hit the cache.
+ */
+function buildEmailUserMessage(context: EmailGenerationContext): string {
+  const { flow, emailNumber } = context;
+  const flowGuidance = getFlowSpecificGuidance(
+    flow.id,
+    emailNumber,
+    flow.emailCount
+  );
+  return `You are writing email #${emailNumber} of ${flow.emailCount} for a "${flow.name}" email sequence.
+
+${flowGuidance}
 
 Generate the email now:`;
 }

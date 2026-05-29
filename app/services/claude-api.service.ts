@@ -1,38 +1,65 @@
 /**
  * Claude API Service
- * Handles all Claude API interactions with timeout and retry
+ *
+ * Thin wrapper around the official @anthropic-ai/sdk client. Exposes a single
+ * `callClaude` function that keeps the same shape the rest of the app already
+ * uses (string prompt + string-or-array systemPrompt + simple options).
+ *
+ * Model: Sonnet 4.6 with `thinking: {type: "disabled"}` + `effort: "low"`.
+ * Effort defaults to "high" on 4.6 — setting it low explicitly maintains
+ * latency parity with Sonnet 4 (which had no effort param).
+ *
+ * Caching: callers can pass `systemPrompt` as an array of TextBlockParam to
+ * place a `cache_control` marker on the stable prefix. See
+ * email-generator.service.ts for the pattern.
+ *
+ * The wrapper logs token usage including cache_read / cache_creation tokens so
+ * we can verify caching is actually working in production logs.
  */
 
-const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
-const CLAUDE_MODEL = "claude-sonnet-4-20250514";
+import Anthropic from "@anthropic-ai/sdk";
 
-/** Timeout for AI generation calls (90 seconds - Sonnet 4 can be slow under load) */
+const CLAUDE_MODEL = "claude-sonnet-4-6";
+
+/** Timeout for AI generation calls (90 seconds — Sonnet 4.6 under load) */
 const AI_TIMEOUT_MS = 90_000;
 
-export interface ClaudeMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface ClaudeResponse {
-  content: Array<{ type: string; text: string }>;
-  id: string;
-  model: string;
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-  };
+/**
+ * Lazily-constructed singleton client. We construct on first use so missing
+ * ANTHROPIC_API_KEY at import time doesn't crash the whole route module.
+ */
+let _client: Anthropic | null = null;
+function getClient(): Anthropic {
+  if (_client) return _client;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY not found in environment variables");
+  }
+  _client = new Anthropic({ apiKey });
+  return _client;
 }
 
 /**
- * Call Claude API with a prompt (includes timeout)
+ * System prompt input: either a plain string (legacy callers, no caching) or
+ * an array of TextBlockParam (lets callers attach `cache_control` to specific
+ * blocks for prefix caching).
+ */
+export type SystemPromptInput =
+  | string
+  | Array<Anthropic.TextBlockParam>;
+
+/**
+ * Call Claude with a single user-turn prompt.
+ *
+ * Returns the response text. Throws on failure (with retry handled by the
+ * caller, e.g. email-generator.service.ts).
  */
 export async function callClaude(
   prompt: string,
   options: {
     maxTokens?: number;
     temperature?: number;
-    systemPrompt?: string;
+    systemPrompt?: SystemPromptInput;
   } = {}
 ): Promise<string> {
   const {
@@ -41,63 +68,60 @@ export async function callClaude(
     systemPrompt,
   } = options;
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY not found in environment variables");
-  }
-
-  const body: any = {
-    model: CLAUDE_MODEL,
-    max_tokens: maxTokens,
-    temperature,
-    messages: [{ role: "user", content: prompt }],
-  };
-
-  if (systemPrompt) {
-    body.system = systemPrompt;
-  }
-
-  // Use AbortController for timeout (matches Shopify app pattern)
+  const client = getClient();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
 
   try {
-    const response = await fetch(CLAUDE_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+    const response = await client.messages.create(
+      {
+        model: CLAUDE_MODEL,
+        max_tokens: maxTokens,
+        temperature,
+        // Email gen doesn't need extended reasoning. Disable explicitly to keep
+        // latency tight (Sonnet 4.6's default effort is "high" — set low).
+        thinking: { type: "disabled" },
+        output_config: { effort: "low" },
+        ...(systemPrompt !== undefined ? { system: systemPrompt } : {}),
+        messages: [{ role: "user", content: prompt }],
       },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+      { signal: controller.signal }
+    );
 
     clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+    // Narrow the discriminated union — we only ever ask for text output here.
+    const firstBlock = response.content[0];
+    if (!firstBlock || firstBlock.type !== "text") {
       throw new Error(
-        `Claude API error (${response.status}): ${
-          errorData.error?.message || response.statusText
-        }`
+        `Claude API returned no text block (first block type: ${firstBlock?.type ?? "none"})`
       );
     }
 
-    const data: ClaudeResponse = await response.json();
+    // Log usage with cache info so we can verify prompt caching is hitting.
+    // cache_creation_input_tokens > 0 on first call after deploy/restart.
+    // cache_read_input_tokens > 0 on subsequent calls if the prefix matches.
+    const u = response.usage;
+    const cacheNote =
+      u.cache_read_input_tokens || u.cache_creation_input_tokens
+        ? ` cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0}`
+        : "";
+    console.log(
+      `✅ Claude: ${u.input_tokens}in/${u.output_tokens}out${cacheNote}`
+    );
 
-    if (!data.content || data.content.length === 0) {
-      throw new Error("Claude API returned empty response");
-    }
-
-    const text = data.content[0].text;
-
-    // Log token usage
-    console.log(`✅ Claude: ${data.usage.input_tokens}in/${data.usage.output_tokens}out tokens`);
-
-    return text;
+    return firstBlock.text;
   } catch (error) {
     clearTimeout(timeoutId);
+
+    // Typed errors from the SDK — surface useful info without leaking internals.
+    if (error instanceof Anthropic.APIError) {
+      console.error(`❌ Claude API error (${error.status}):`, error.message);
+      // Preserve original error semantics for upstream retry logic.
+      throw new Error(
+        `Claude API error (${error.status}): ${error.message}`
+      );
+    }
 
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(`Claude API timeout after ${AI_TIMEOUT_MS / 1000}s`);

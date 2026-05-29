@@ -100,6 +100,27 @@ CRAWL (see `references/flowmintv2ghl/PRODUCT_BRIEF.md`). Orientation complete. P
   - Em-dash bug is small. One-line prompt fix in `email-generator.service.ts` ("Never use em dashes. Use commas, periods, or rewrites."). Surfaces in Slice 2 as part of the prompt rework anyway, but could land sooner.
   - Variable scrape time (10s vs 92s) is a separate concern; parked.
 
+### Post-optimization — 2026-05-28 (later same day)
+- **Changes applied:**
+  - Adopted `@anthropic-ai/sdk` (was raw fetch).
+  - Migrated model `claude-sonnet-4-20250514` → `claude-sonnet-4-6`.
+  - Added `thinking: {type: "disabled"}` + `output_config: {effort: "low"}` to keep latency parity (4.6 defaults to `effort: "high"`).
+  - Restructured `email-generator.service.ts` prompt: stable brand/format/platform context moved to system messages with `cache_control: {type: "ephemeral"}` on the per-URL block. Per-email variable content stays in the user message.
+- **Verified caching works:** probe call shows `cache_creation_input_tokens=1534` on first call, `cache_read_input_tokens=1534` on second call. Empirical Sonnet 4.6 cache minimum is below the 2048-token figure in the docs we'd quoted.
+- **Re-baseline (same 5 URLs):**
+  - Per-email gen median: **26.9s (unchanged)** — cache helps cost, not latency, at this prefix size. Most of the 25-27s is output gen at the 2000-token cap.
+  - Per-email gen p95: 306s (much worse). Caused by SDK's built-in retry-on-rate-limit compounding with our outer retry. Median unaffected; investigate if tails become user-visible.
+  - End-to-end median: 155s (worse than 120s baseline, but scrape variance accounts for the gap — we didn't change scrape code).
+  - Em-dashes: **1/5 URLs (down from 3/5)** — Sonnet 4.6's stronger instruction-following on system-prompt hard rules.
+  - Classification: 5/5 correct, unchanged.
+- **Cost impact (full-campaign math):**
+  - 54 emails per URL × ~1100 input tokens uncached ≈ 88K input tokens / URL → $0.26 at $3/M
+  - With cache (1 write + 53 reads): ~14K effective input tokens / URL → $0.04
+  - **~8% total cost reduction per URL**; meaningful only at Reed's expected volume across many clients.
+- **Real wins:** em-dash compliance improved, deprecation pressure removed (Sonnet 4 retires 2026-06-15), SDK adoption unlocks future features (streaming, batches) and proper typed errors.
+- **Walked-back claims:** the "3-8s per email" latency improvement I'd implied did not materialize. Output dominates at this prompt size.
+- **Tuning items parked:** raise `max_tokens` from 2000 → 2500-3000 (4.6 at effort:low writes longer emails; some are hitting the cap); investigate p95 outliers if Reed/Josh report slowness; consider pre-warm fan-out to save 4 extra cache-writes per campaign.
+
 ## Notes for the next session
 
 - Architecture section in `references/flowmintv2ghl/CLAUDE.md` is real, not a TODO. Re-read it before touching code.
