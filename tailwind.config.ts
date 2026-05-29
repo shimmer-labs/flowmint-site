@@ -23,6 +23,19 @@ const config: Config = {
           750: "#293548",
           850: "#172033",
         },
+        // GHL destination accent. Mint stays the primary action color across
+        // FlowMint; ghl-* is used only on surfaces that touch GoHighLevel
+        // (Push to GHL chip, connection rows, embedded-destination cues) so
+        // users get a subtle "this is going somewhere external" signal.
+        // Hue chosen to read as confident indigo/blue near GHL's own UI tone.
+        ghl: {
+          50: "#eef2ff",
+          100: "#e0e7ff",
+          200: "#c7d2fe",
+          400: "#818cf8",
+          600: "#4f46e5",
+          700: "#4338ca",
+        },
       },
       fontFamily: {
         sans: ["Inter", "Public Sans", "-apple-system", "BlinkMacSystemFont", "sans-serif"],

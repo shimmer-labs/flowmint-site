@@ -365,7 +365,12 @@ export default function SettingsClient({
         {/* GHL Locations */}
         <div className="bg-white rounded-xl border border-gray-200 p-6 mt-8">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-900">GHL Locations</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold text-gray-900">GHL Locations</h2>
+              <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-ghl-50 text-ghl-700 ring-1 ring-ghl-200">
+                GoHighLevel
+              </span>
+            </div>
             {!showGhlForm && (
               <button
                 onClick={() => {
@@ -393,12 +398,18 @@ export default function SettingsClient({
                   key={c.id}
                   className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
                 >
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {c.location_label || "(no label)"}
-                    </div>
-                    <div className="text-xs text-gray-500 font-mono">
-                      {c.location_id}
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="w-1.5 h-8 rounded-full bg-ghl-600 flex-shrink-0"
+                      aria-hidden="true"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {c.location_label || "(no label)"}
+                      </div>
+                      <div className="text-xs text-gray-500 font-mono">
+                        {c.location_id}
+                      </div>
                     </div>
                   </div>
                   <button

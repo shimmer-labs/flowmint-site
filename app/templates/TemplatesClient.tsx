@@ -455,17 +455,24 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
                                 templateIds: group.templates.map((t) => t.id),
                               });
                             }}
-                            className="text-sm text-mint-600 hover:text-mint-700 font-medium cursor-pointer"
+                            className="inline-flex items-center gap-1.5 text-sm text-mint-600 hover:text-mint-700 font-medium cursor-pointer"
                           >
-                            Push to GHL
+                            Push to
+                            <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-ghl-50 text-ghl-700 ring-1 ring-ghl-200">
+                              GHL
+                            </span>
                           </span>
                         ) : (
                           <a
                             href="/settings"
                             onClick={(e) => e.stopPropagation()}
-                            className="text-sm text-gray-500 hover:text-mint-700 font-medium"
+                            className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-mint-700 font-medium"
                           >
-                            Connect GHL to push
+                            Connect
+                            <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-ghl-50 text-ghl-700 ring-1 ring-ghl-200">
+                              GHL
+                            </span>
+                            to push
                           </a>
                         )}
                         <span
@@ -736,7 +743,12 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-900">Push to GHL</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xl font-bold text-gray-900">Push to GHL</h3>
+                <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-ghl-50 text-ghl-700 ring-1 ring-ghl-200">
+                  GoHighLevel
+                </span>
+              </div>
               <button
                 onClick={() => setGhlPushModal(null)}
                 className="text-gray-400 hover:text-gray-600"
