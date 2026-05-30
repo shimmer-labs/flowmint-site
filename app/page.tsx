@@ -207,7 +207,7 @@ export default function Home() {
             Email marketing for local service businesses
           </span>
           <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
-            Turn your website into emails that bring customers back
+            Get more repeat customers, without writing the emails
           </h1>
           <p className="text-xl text-gray-600 mb-12 max-w-2xl mx-auto">
             Drop in your website and FlowMint writes a full set of customer
