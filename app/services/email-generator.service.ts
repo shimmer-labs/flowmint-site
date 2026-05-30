@@ -4,10 +4,30 @@
  * Includes retry logic (1 retry with 2s delay) matching the Shopify app
  */
 
-import { callClaude } from "./claude-api.service";
+import { callClaude, CLAUDE_MODEL } from "./claude-api.service";
 import { FlowDefinition } from "../utils/flow-mappings";
 import { BrandAnalysisResult } from "./brand-analysis.service";
-import { getSyntaxInstructions } from "../utils/platform-syntax";
+import { getSyntaxInstructions, PLATFORMS } from "../utils/platform-syntax";
+
+/**
+ * Prompt-version tag persisted with every generated email (email_templates
+ * .prompt_version). Bump this whenever the generation prompt changes (e.g. the
+ * Slice 2 em-dash + GHL merge-field rework) so perf-summary.ts can attribute
+ * latency/quality/token shifts to the right prompt. Current value: the
+ * 2026-05-28 SDK + system-prompt prefix-cache rework (see COORDINATION.md).
+ */
+export const EMAIL_PROMPT_VERSION = "2026-05-30-len-unsub-v1";
+
+/** Per-email generation metrics, threaded into the email_templates insert. */
+export interface EmailMetrics {
+  gen_ms: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_create_tokens: number;
+  model: string;
+  prompt_version: string;
+}
 
 export interface GeneratedEmail {
   subject: string;
@@ -17,6 +37,8 @@ export interface GeneratedEmail {
   format: "html" | "plain";
   failed?: boolean;
   error?: string;
+  /** Present on successful generations; absent on the failed-placeholder path. */
+  metrics?: EmailMetrics;
 }
 
 export interface EmailGenerationContext {
@@ -52,8 +74,12 @@ export async function generateEmail(
     const cachedContext = buildEmailContext(context);
     const userPrompt = buildEmailUserMessage(context);
 
-    const emailContent = await callClaude(userPrompt, {
-      maxTokens: 2000,
+    const startedAt = Date.now();
+    const { text: emailContent, usage } = await callClaude(userPrompt, {
+      // 2000 was truncating most HTML emails mid-document (the closing footer +
+      // unsubscribe got cut). HTML emails run ~2000-3000 output tokens; 4096
+      // gives headroom. Paired with the length guardrail in the prompt.
+      maxTokens: 4096,
       temperature: 0.8,
       systemPrompt: [
         { type: "text", text: STABLE_EXPERT_PROMPT },
@@ -66,8 +92,19 @@ export async function generateEmail(
         },
       ],
     });
+    const gen_ms = Date.now() - startedAt;
 
-    return parseEmailResponse(emailContent, platform, format);
+    const email = ensureUnsubscribe(parseEmailResponse(emailContent, platform, format));
+    email.metrics = {
+      gen_ms,
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      cache_read_tokens: usage.cache_read_tokens,
+      cache_create_tokens: usage.cache_create_tokens,
+      model: CLAUDE_MODEL,
+      prompt_version: EMAIL_PROMPT_VERSION,
+    };
+    return email;
   } catch (error: any) {
     console.error(`❌ ${flow.name} #${emailNumber} attempt ${attempt} failed:`, error.message);
 
@@ -139,6 +176,7 @@ CRITICAL REQUIREMENTS:
 - Match the brand voice (${brandAnalysis.brandVoice.tone}, ${brandAnalysis.brandVoice.style})
 - Use EXACT platform syntax from above for personalization variables
 - ${format === "html" ? "Output complete HTML with inline CSS (no markdown code blocks)" : "Output clean plain text"}
+- LENGTH: keep the visible copy tight and skimmable (roughly 120-220 words). The COMPLETE document, including the closing footer with the unsubscribe link, MUST finish within the response. Never run long and get cut off.
 - Include unsubscribe link in footer using platform syntax
 - Make it conversion-focused and action-oriented
 - Use proper conditional logic for personalization
@@ -416,6 +454,32 @@ function cleanEmailContent(emailContent: string): string {
     .replace(/SUBJECT:\s*.+?\n/i, "")
     .replace(/PREHEADER:\s*.+?\n/i, "")
     .trim();
+}
+
+/**
+ * Belt-and-suspenders: guarantee an unsubscribe link is present. The prompt
+ * requires one, and raising maxTokens stopped the footer from being truncated,
+ * but if the model still omits it we append a minimal compliant footer using
+ * the platform's unsubscribe syntax. (CAN-SPAM: every email needs one.)
+ */
+function ensureUnsubscribe(email: GeneratedEmail): GeneratedEmail {
+  if (/unsubscribe/i.test(email.body)) return email;
+
+  const token = (PLATFORMS[email.platform] ?? PLATFORMS.klaviyo).syntax.unsubscribe;
+
+  if (email.format === "html") {
+    const isUrlish = /url|https?:/i.test(token);
+    const link = isUrlish
+      ? `<a href="${token}" style="color:#888888;">Unsubscribe</a>`
+      : token;
+    const footer = `<p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#888888;text-align:center;margin-top:24px;">If you'd rather not hear from us, you can ${link} at any time.</p>`;
+    email.body = /<\/body>/i.test(email.body)
+      ? email.body.replace(/<\/body>/i, `${footer}</body>`)
+      : `${email.body}\n${footer}`;
+  } else {
+    email.body = `${email.body}\n\n---\nUnsubscribe: ${token}`;
+  }
+  return email;
 }
 
 /**

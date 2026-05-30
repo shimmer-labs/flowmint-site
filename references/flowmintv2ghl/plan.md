@@ -24,6 +24,8 @@ Phase 0 complete. Slice 1 (OAuth foundations) shipped as code-on-shelf, then we 
 
 Slice 1B (PIT settings UI + save route + ghlFetch PIT support) is built and building cleanly. Pending: Logan applies migration-005, then ships first end-to-end PIT save + push.
 
+**2026-05-30 reality update (roadmap had drifted; re-syncing now).** CRAWL is effectively shipped end-to-end and live on flowmint.me: analyze → generate (GHL-default) → preview → connect GHL (PIT, just-in-time modal) → push. A demo-polish sprint ran outside this slice plan and shipped: GHL-default platform on results, one-email "wow" flow, honest loading, beta mode (paywalls off, pricing greyed), Brand-Card-first results, dashboard intro + GHL status, just-in-time GHL connect modal with live token test, race-safe FlowMint folder creation, push dedup + "Synced to GHL" status (migration-008), orphaned-analysis claim-on-signup, and the GHL Liquid-`{% %}`-in-bodies fix. Demo recorded for Reed; Reed + Josh testing. Slice 2 and Slice 4 build items are now done (checked off below). A 2026-05-30 email audit surfaced three generation-quality issues — see "Email-quality fixes (CRAWL)" below.
+
 ---
 
 ## Phase 0: Orientation and groundwork — COMPLETE ✅
@@ -135,12 +137,12 @@ Resolved from the first annotation pass:
 - **Misclassification risk is a real CRAWL concern, not a parking item.** Many beta-cohort test URLs will be local service businesses (plumbers, roofers); the existing flow library is e-commerce-centric. Slice 3 includes a manual classification spot-check for every test URL. If the analyzer miscategorizes a plumber as an "online retailer," that's a Slice-3 surfacing, not something we discover during demo. (ICP-aware flow template expansion is still WALK and parked separately.)
 
 Build items:
-- [ ] Add `ghl` entry to `app/utils/platform-syntax.ts` matching the rules in `.claude/skills/ghl-merge-field-generator/SKILL.md`.
-- [ ] Update `app/services/email-generator.service.ts` to inject the merge-field generator rules block into the prompt when `platform === "ghl"`. Include the "invent `{{custom_values.*}}` keys as needed" instruction.
-- [ ] **Em-dash fix (cross-platform, surfaced by baseline).** Add a "Never use em dashes. Use commas, periods, or rewrites." line to the system prompt in `email-generator.service.ts`. Applies to every platform, not just GHL. Re-run the baseline eval against one URL afterwards to confirm zero em-dashes; record post-fix numbers in COORDINATION.md.
-- [ ] Templates-page platform picker: add GHL as an option.
-- [ ] "Push to GHL" CTA: if the user has no `ghl_connections` row, open a "Connect GHL" modal that triggers `/api/integrations/install?provider=ghl`. After OAuth callback, return to the templates page with the push CTA enabled.
-- [ ] Spot-check: generate one email for one flow at `platform=ghl`. Verify (a) every personalization field has a `||` fallback, (b) any "static" business reference uses `{{custom_values.*}}`, (c) no em dashes.
+- [x] Add `ghl` entry to `app/utils/platform-syntax.ts` matching the rules in `.claude/skills/ghl-merge-field-generator/SKILL.md`.
+- [x] Update `app/services/email-generator.service.ts` to inject the merge-field generator rules block into the prompt when `platform === "ghl"`. Include the "invent `{{custom_values.*}}` keys as needed" instruction. **2026-05-30 follow-up:** the shared base prompt also injected a Liquid `{% if %}` conditional block for GHL, which GHL ships as literal text — fixed by giving GHL its own instruction set (no `{% %}`, inline `||` only).
+- [x] **Em-dash fix (cross-platform, surfaced by baseline).** Done — `STABLE_EXPERT_PROMPT` hard-rule. (Note: the live homepage hero still has an em dash — parked.)
+- [x] Templates-page platform picker: add GHL as an option. (Results page now defaults to GHL + keeps the switcher.)
+- [x] "Push to GHL" CTA: just-in-time "Connect to GoHighLevel" modal on the templates page (PIT, not the OAuth install route) with live token test + 3 states.
+- [x] Spot-check: verified live — GHL email generates `{{contact.first_name || "there"}}` + `{{custom_values.*}}`, no `person.*`, no em dashes, no `{% %}` after the fix.
 
 ### Slice 3: AI generation baseline + classification spot-check (parallel with Slices 1-2)
 
@@ -171,10 +173,22 @@ Resolved:
 - **Purchase gating:** GHL push uses the same gates as Klaviyo push. Beta testers get unlimited access via DB flag (see "Prep before Slice 6"), not by removing gates.
 
 Build items:
-- [ ] Add `pushToGHL(connection, template)` branch in `app/api/push-to-platform/route.ts`. Uses `app/lib/ghl/client.ts` for auth and refresh.
-- [ ] Wire the actual push from the "Push to GHL" UI added in Slice 2.
-- [ ] Update post-push toast and `email_templates` row (`pushed_to_platform: "ghl"`, `pushed_at`) to surface the human-wiring next step explicitly. Toast copy lives near the `ghl-template-push` skill's "report back" rule.
-- [ ] Verify path: push one template to test sub-account; appears in GHL UI; manually wire into a workflow; trigger with a test contact; merge fields render with real values.
+- [x] Add `pushToGHL` branch in `app/api/push-to-platform/route.ts`. Pushes to the FlowMint folder (race-safe lazy creation), V2 templates endpoint. **WALK was "no folders"; we shipped a single FlowMint folder in CRAWL.**
+- [x] Wire the actual push from the "Push to GHL" UI.
+- [x] Post-push toast names the human-wiring step; `email_templates` now records `pushed_to_platform`, `pushed_at`, `ghl_template_id`, `pushed_location_id` (migration-008). Re-push dedupes (skips emails already pushed to that location) so it no longer duplicates templates in the folder. "Synced to GHL" badges on the templates page.
+- [ ] **Verify path (Logan):** push to a test sub-account, confirm it appears in GHL, wire into a workflow, trigger with a test contact, merge fields render. (Logan's live bug-test — pending.)
+
+### Email-quality fixes (CRAWL — surfaced by 2026-05-30 email audit)
+
+Audited recent `email_templates` in Supabase. Findings + placement:
+
+1. **Truncation (CRAWL, high).** `generateEmail` sets `maxTokens: 2000` (`email-generator.service.ts:79`). HTML emails run ~5,500–7,400 chars; recorded `output_tokens` hit the cap exactly (1998 / 2000 / 2000) and ~18 of the last 25 HTML emails have **no `</html>`** — they're cut off mid-document. Root cause is the token ceiling, not the prompt. Fix: raise `maxTokens` (HTML needs ~4096; test against the baseline URLs to confirm no quality regression) and add a preferred-length guardrail so the footer reliably fits. Was parked as a WALK "bump to 2500–3000"; **pulled up to CRAWL** — truncated emails aren't beta-ready.
+   - [ ] Raise maxTokens to ~4096, re-run baseline eval, confirm `</html>` present + no quality regression. Bump `EMAIL_PROMPT_VERSION`.
+
+2. **Missing unsubscribe (CRAWL, high — compliance).** Same root cause: the footer (with `{{message.unsubscribe_url}}`) is the last thing written, so truncation drops it. `has_unsub_token` is false on most truncated emails, true on the ones that closed cleanly. The prompt already *requires* the unsubscribe; it just gets cut. The maxTokens fix should resolve it.
+   - [ ] After the token fix, re-audit: every generated email contains an unsubscribe link. Consider a belt-and-suspenders post-generation check that appends a standard footer if the model omitted one.
+
+3. **CTA links not sourced from the scanned site (WALK).** GHL emails correctly use `{{custom_values.booking_url}}` / `{{custom_values.website_url}}` / `{{custom_values.review_url}}` for CTAs (right pattern — no hardcoding). But we never harvest the real URLs from the scan, and the generator isn't passed any site URLs, so those Custom Values render empty unless the client sets them in GHL. Folds into the parked "link asset extraction into GHL Custom Values" item. CRAWL-lite mitigation worth considering: thread the real site/booking URL into the generation context so there's a sensible value. Kept WALK for now.
 
 ### Slice 5: Internal rehearsal
 
@@ -216,6 +230,7 @@ Build items:
 Goal: measure and optimize the time it takes to generate emails, so the GHL integration ships on a fast generation step rather than baking in a slow one.
 
 - [ ] Baseline recorded (covered by Slice 3).
+- [x] **Perf instrumentation landed (2026-05-29).** `callClaude` now returns `{ text, usage }`; per-email metrics (`gen_ms`, token counts, `model`, `prompt_version`) persist to `email_templates` and per-analysis metrics (`scrape_ms`, `analyze_ms`, token counts) to `brand_analyses` (migration-007, all nullable). `scripts/perf-summary.ts` prints per-flow median/p95 gen_ms, cache hit rate, and token totals by model+prompt_version over the last N days. Pending: Logan applies migration-007 in the SQL editor, then re-export `references/supabase-schema.md`. Prompt-version tag is `2026-05-28-sdk-cache-v1` (bump on the Slice 2 prompt rework).
 - [ ] Optimization levers to test, one at a time, measuring each against baseline:
   - Prompt tightening / shorter system prompt
   - Model choice (Sonnet 4 → Haiku 4.5 where quality holds)
@@ -235,12 +250,12 @@ Asides and "would be cool someday" items. One line each: what it is, effort (S/M
 - **ICP-aware flow library expansion.** Build flow templates for local service businesses (plumbers, roofers, HVAC, electricians) using existing FlowMint flows as a base plus research. Effort: L. Impact: high (sales credibility with Reed's pipeline). Phase: WALK by default; could become CRAWL if Slice 3 reveals the analyzer or flow library miscategorizes the beta cohort's test URLs. Notes: separate dedicated session per Logan's call.
 
 **WALK candidates:**
-- **Raise email-gen `max_tokens` from 2000 → 2500-3000.** Post-optimization eval (see COORDINATION.md) shows Sonnet 4.6 at `effort: "low"` is writing longer emails than Sonnet 4 did — some calls are hitting the 2000 cap. Worth bumping with caution (test against the baseline URLs again after the change to confirm no quality regression). Effort: S. Impact: low–medium (catches truncated emails). Phase: WALK.
+- ~~**Raise email-gen `max_tokens` from 2000 → 2500-3000.**~~ **PULLED UP TO CRAWL (2026-05-30).** The 05-30 audit showed it's not "some calls" — most HTML emails truncate (no `</html>`, and the unsubscribe gets cut). See "Email-quality fixes (CRAWL)" above. Bump to ~4096 + length guardrail + re-baseline.
 - **Investigate p95 outliers on email-gen.** Post-opt eval saw p95 jump to 306s due to the SDK's auto-retry-on-rate-limit compounding with our outer retry on transient API pressure. Median is fine. If Reed/Josh report slowness on real usage, dig in (cap SDK retries, surface the retry count to the eval log). Effort: S–M. Impact: medium (only if it surfaces). Phase: WALK.
 - **Pre-warm fan-out for cache writes.** Current concurrency=5 in `generate-all` means the first batch of 5 calls all write the cache — only the second batch onwards reads. Sending 1 priming call, awaiting the first token, then firing the remaining 4 saves 4 cache-writes per campaign (~$0.02 saving per URL). Tiny effort, tiny impact, easy to do whenever. Effort: S. Impact: low. Phase: WALK.
 - **Custom Menu link + SSO into FlowMint (the "GHL sidebar shortcut").** Add FlowMint as a Custom Menu item in the GHL marketplace app config; clicking it opens flowmint.me in a new tab with the user already authenticated via the encrypted user-context blob (`postMessage` + AES decrypt with our Shared Secret). Kills the email/password login step AND the location-ID paste in one move. Pre-conditions: re-engage the marketplace app (now informed by the lessons we just learned — pricing model "Free" not Freemium, all required fields filled, etc.); add a `/api/sso/ghl` route that decrypts the blob and creates/matches a FlowMint user; add the menu URL config to the GHL app. Effort: M (~1 week). Impact: high — Reed sees FlowMint in his GHL sidebar without leaving GHL's chrome. Phase: WALK. Decided 2026-05-28 as the right WALK move once we have Reed/Josh CRAWL feedback.
 - **Per-brand sub-folders inside FlowMint.** Today we drop every pushed template into a single "FlowMint" folder per GHL location. For an agency like Reed that pushes for multiple clients into a single GHL location (unusual but possible), templates from different brands would mix together. WALK option: nest brand-named sub-folders under FlowMint (e.g. "FlowMint / ShimmerLabs"), cached on the analysis or per-push. Effort: M. Impact: low for typical Reed workflow (one client per sub-account); higher if agencies route multiple brands through one sub-account. Decide after Reed/Josh feedback.
-- **Tear out `BETA_OPEN_ACCESS` when real pricing flips on.** Currently set to `true` in local + (TBD) Vercel; bypasses every paywall by short-circuiting `hasUnlimitedAccess`. Before charging anyone, set it to `false` in Vercel and verify the purchase flow works end-to-end (which surfaces the Stripe test/live key mismatch below). Effort: S (config flip + verify). Impact: high (revenue). Phase: WALK / RUN.
+- **Tear out `BETA_OPEN_ACCESS` when real pricing flips on.** Set to `true` in local + Vercel (confirmed 2026-05-30); a `NEXT_PUBLIC_BETA_OPEN_ACCESS` client twin greys out in-app pricing + hides paywalls. Bypasses every paywall by short-circuiting `hasUnlimitedAccess`. Before charging anyone, set it to `false` in Vercel and verify the purchase flow works end-to-end (which surfaces the Stripe test/live key mismatch below). Effort: S (config flip + verify). Impact: high (revenue). Phase: WALK / RUN.
 - **Stripe test-mode price IDs.** Local `.env.local` has live-mode Stripe price IDs (`price_1T9bdS0rJcMXVHwsR6A5kbm5` etc. per `app/lib/stripe.ts`) but a test-mode `STRIPE_SECRET_KEY`, so `/api/checkout` throws "No such price... a similar object exists in live mode" when paywalled flows try to purchase. Fix: keep a parallel set of test-mode price IDs, pick based on environment, or use Stripe restricted keys. Effort: S. Impact: low while `BETA_OPEN_ACCESS=true` masks it; high when we flip beta off. Phase: WALK.
 - **Settings UX pass for platform connections.** The settings page now has two separate concepts: "Email Platform" (single platform + API key, the old user_settings flow for Klaviyo/Mailchimp/etc.) and "GHL Locations" (a list of connected sub-accounts via PIT). For users this is confusing — two different "connect to push" surfaces with different shapes. Worth a proper UX/UI pass to either unify them or differentiate them visually with stronger affordances. Effort: M. Impact: medium (matters for Reed/Josh demo confidence). Phase: WALK.
 - **Connection liveness pulse.** Right now we save a connection and never re-check it. PITs are static but can be rotated, revoked, or have scopes edited away. Periodically (daily? on each settings-page load?) call `GET /locations/{locationId}` with the stored token and surface "✓ working" / "⚠️ token rejected, re-connect" badges on each connection row. Catches silent breakage before the next push. Effort: S-M. Impact: medium (saves a debugging cycle when a token goes stale). Phase: WALK.
@@ -258,6 +273,13 @@ Asides and "would be cool someday" items. One line each: what it is, effort (S/M
 - **Column-level encryption for GHL tokens.** Port the `~/flowmint/app/utils/encryption.server.ts` pattern. Pre-condition: before the first paying multi-location customer, or before any non-Logan-controlled deployment. Effort: M. Impact: medium (defense in depth). Phase: WALK.
 - **AI image generation based on site images (NOT logo/QR).** Generate on-brand hero/section images for templates from the brand's site imagery. Effort: M-L. Impact: medium-high (visual polish on demos). Phase: WALK.
 - **Image and link asset extraction from URL scan into GHL.** During brand analysis, harvest logos, QR codes, and booking links that are on the site but not yet in the client's GHL location; offer to upload to GHL Custom Values / Media. Effort: M. Impact: medium. Phase: WALK. Likely combines with the (c) → (a) upgrade for Custom Values sourcing.
+
+**Demo-polish deferrals (added 2026-05-30 — shipped the core, parked these):**
+- **Live "synced" verification against GHL (deleted-in-GHL case).** Reed/Logan ask: the "Synced to GHL" badges reflect our DB push record, not GHL reality. On templates load (or a daily background pass), GET each pushed template by `ghl_template_id`; on 404, clear `ghl_template_id`/`pushed_at` so the badge drops and a re-push recreates it. Combines with "Connection liveness pulse" above. Effort: M (N API calls, debounce/cache). Impact: medium. Phase: WALK.
+- **Update an edited template in GHL on re-push.** Dedup currently skips emails already pushed to a location, so AI-editing then re-pushing won't update the GHL copy. Needs GHL's template-update (PUT) endpoint — verify it exists in `ghl-api-reference.md` first; if not, delete-by-id + recreate. Effort: M. Impact: medium. Phase: WALK.
+- **Mobile email-preview clipping.** Fixed-width email tables clip on ~375px (results sample + templates preview). Constrain the preview container / scale it down. Effort: S. Impact: low–medium (testers likely on desktop). Phase: WALK.
+- **Flow-generation progress bar: fully indeterminate.** Emails generate in parallel (concurrency 5), so a 3-email flow jumps nothing→done and a determinate bar can't show real increments. Switch to an indeterminate "Writing your N emails…" animation for the whole (short) wait. Effort: S. Impact: low. Phase: WALK.
+- **Signup email-confirm redirect.** Auto-confirm path already returns to `/results?id=&flow=`; if email confirmation is ever turned on, pass `emailRedirectTo` with `?next=` at `signUp` so the confirm link returns to the right place (the callback already honors `next`). Effort: S. Impact: low. Phase: WALK.
 
 **Already shipped — confirm and drop from this list:**
 - **AI-prompt template edit sidebar.** Logan's memory: "we built something like this." Confirmed: it's live in flowmint-site at `app/api/ai-edit/route.ts`, gated by "any purchase" (per CLAUDE.md: "AI template editing unlocked by any purchase, not tier-gated"). Originally built in `~/flowmint` per the `templates-ai-edit-open.png` screenshot, ported to flowmint-site. **Logan to confirm the existing UI matches the memory; if it does, delete this bullet next time you touch the file.**
