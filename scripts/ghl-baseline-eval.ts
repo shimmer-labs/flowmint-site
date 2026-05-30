@@ -183,7 +183,8 @@ async function evalOne(
 
   let analysis;
   try {
-    analysis = await analyzeBrand(scraped);
+    // analyzeBrand now returns { analysis, usage }; this eval only needs analysis.
+    ({ analysis } = await analyzeBrand(scraped));
   } catch (err: any) {
     result.error = `analyze failed: ${err?.message ?? err}`;
     return result;

@@ -3,7 +3,7 @@
  * Adapted from ottomate - now uses scraped data instead of Shopify API
  */
 
-import { callClaude } from "./claude-api.service";
+import { callClaude, ClaudeUsage } from "./claude-api.service";
 import { ScrapedData } from "./scraper.service";
 import { recommendFlows, FlowDefinition } from "../utils/flow-mappings";
 
@@ -37,17 +37,26 @@ export interface BrandAnalysisResult {
   };
 }
 
+/** analyzeBrand result: the analysis plus the Claude token usage for the call,
+ *  so the route can persist per-analysis token metrics (migration-007). The
+ *  caller times the call itself for analyze_ms (kept consistent with how it
+ *  times scrape_ms around scrapeWebsite). */
+export interface AnalyzeBrandResult {
+  analysis: BrandAnalysisResult;
+  usage: ClaudeUsage;
+}
+
 /**
  * Analyze brand from scraped website data
  */
-export async function analyzeBrand(scrapedData: ScrapedData): Promise<BrandAnalysisResult> {
+export async function analyzeBrand(scrapedData: ScrapedData): Promise<AnalyzeBrandResult> {
   console.log(`🧠 Analyzing brand for ${scrapedData.url}`);
 
   // Build comprehensive brand analysis prompt
   const prompt = buildBrandAnalysisPrompt(scrapedData);
 
   // Call Claude for brand analysis
-  const analysisText = await callClaude(prompt, {
+  const { text: analysisText, usage } = await callClaude(prompt, {
     maxTokens: 3000,
     temperature: 0.7,
     systemPrompt: "You are an expert brand analyst specializing in brand voice, visual identity, and customer positioning. Analyze websites and extract brand characteristics accurately.",
@@ -60,19 +69,22 @@ export async function analyzeBrand(scrapedData: ScrapedData): Promise<BrandAnaly
   const recommendedFlows = recommendFlows(analysis.businessModel);
 
   return {
-    ...analysis,
-    recommendedFlows: recommendedFlows.slice(0, 3), // Top 3 recommendations
-    sourcesAnalyzed: {
-      productsCount: scrapedData.products.length,
-      blogsCount: scrapedData.blogPosts.length,
-      hasAboutPage: !!scrapedData.aboutContent,
+    analysis: {
+      ...analysis,
+      recommendedFlows: recommendedFlows.slice(0, 3), // Top 3 recommendations
+      sourcesAnalyzed: {
+        productsCount: scrapedData.products.length,
+        blogsCount: scrapedData.blogPosts.length,
+        hasAboutPage: !!scrapedData.aboutContent,
+      },
+      images: {
+        logo: scrapedData.logo,
+        hero: scrapedData.images.hero,
+        products: scrapedData.images.products,
+        lifestyle: scrapedData.images.lifestyle,
+      },
     },
-    images: {
-      logo: scrapedData.logo,
-      hero: scrapedData.images.hero,
-      products: scrapedData.images.products,
-      lifestyle: scrapedData.images.lifestyle,
-    },
+    usage,
   };
 }
 

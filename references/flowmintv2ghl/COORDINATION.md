@@ -121,6 +121,21 @@ CRAWL (see `references/flowmintv2ghl/PRODUCT_BRIEF.md`). Orientation complete. P
 - **Walked-back claims:** the "3-8s per email" latency improvement I'd implied did not materialize. Output dominates at this prompt size.
 - **Tuning items parked:** raise `max_tokens` from 2000 → 2500-3000 (4.6 at effort:low writes longer emails; some are hitting the cap); investigate p95 outliers if Reed/Josh report slowness; consider pre-warm fan-out to save 4 extra cache-writes per campaign.
 
+## Perf-metrics task (task #26) — 2026-05-29
+
+- **Supabase MCP:** was NOT actually configured at session start (absent from `claude mcp list` and `~/.claude.json`). Added it this session: `claude mcp add supabase-flowmint -s local -e SUPABASE_ACCESS_TOKEN=... -- npx -y @supabase/mcp-server-supabase@latest --read-only --project-ref=fcibehadmkbasqnwhenr`. Server shows ✓ Connected, but its **tools don't load into an already-running session** — a Claude Code restart is required before the MCP is callable. Token came from Logan (pasted in chat); it lives in `~/.claude.json` (untracked), not the repo.
+- **Code shipped, `npm run build` green:**
+  - `app/services/claude-api.service.ts` — `callClaude` returns `{ text, usage }` (normalized `ClaudeUsage`: input/output/cache_read/cache_create); `CLAUDE_MODEL` now exported.
+  - `app/services/email-generator.service.ts` — `GeneratedEmail.metrics` (gen_ms, tokens, model, prompt_version); `EMAIL_PROMPT_VERSION = "2026-05-28-sdk-cache-v1"`.
+  - `app/services/brand-analysis.service.ts` — `analyzeBrand` returns `{ analysis, usage }` (`AnalyzeBrandResult`).
+  - `app/api/generate-all/route.ts` — threads per-email metrics into `email_templates` insert.
+  - `app/api/analyze/route.ts` — times scrape + analyze, threads metrics into `brand_analyses` upsert.
+  - `app/api/ai-edit/route.ts` — destructures `{ text }` (no metrics persisted there).
+  - `scripts/ghl-baseline-eval.ts` — updated for new `analyzeBrand` shape (4th caller, caught by build).
+  - `scripts/perf-summary.ts` — new readout script.
+- **Migration applied + verified (2026-05-29):** `supabase/migration-007-perf-metrics.sql` applied by Logan in the SQL editor. Verified live via `npx tsx --env-file=.env.local scripts/perf-summary.ts` — selecting the new columns ran clean (PostgREST would error on a missing column), so both tables have them. No rows with metrics yet (nothing generated since apply).
+- **Schema backup partially patched:** `references/supabase-schema.md` — the two changed tables' column lists updated by hand and flagged as a partial patch. **Still TODO: full re-export via Supabase MCP next session** (refreshes indexes/RLS/FK sections too). MCP is configured but needs a Claude Code restart to be callable — see [[supabase-mcp-configured]].
+
 ## Notes for the next session
 
 - Architecture section in `references/flowmintv2ghl/CLAUDE.md` is real, not a TODO. Re-read it before touching code.

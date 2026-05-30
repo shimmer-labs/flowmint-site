@@ -55,13 +55,17 @@ export async function POST(request: NextRequest) {
     //   });
     // }
 
-    // Step 1: Scrape website
+    // Step 1: Scrape website (timed for perf metrics)
     console.log('📡 Scraping website...');
+    const scrapeStart = Date.now();
     const scrapedData = await scrapeWebsite(validatedUrl.href);
+    const scrapeMs = Date.now() - scrapeStart;
 
-    // Step 2: Analyze brand with AI
+    // Step 2: Analyze brand with AI (timed; token usage comes back from the call)
     console.log('🧠 Analyzing brand...');
-    const brandAnalysis = await analyzeBrand(scrapedData);
+    const analyzeStart = Date.now();
+    const { analysis: brandAnalysis, usage: analyzeUsage } = await analyzeBrand(scrapedData);
+    const analyzeMs = Date.now() - analyzeStart;
 
     // Step 3: Save to database (use admin client to bypass RLS)
     console.log('💾 Saving to database...');
@@ -97,6 +101,13 @@ export async function POST(request: NextRequest) {
         business_model: brandAnalysis.businessModel,
         recommended_flows: brandAnalysis.recommendedFlows.map(f => f.id),
         last_refreshed: new Date().toISOString(),
+        // Perf metrics (migration-007)
+        scrape_ms: scrapeMs,
+        analyze_ms: analyzeMs,
+        analyze_input_tokens: analyzeUsage.input_tokens,
+        analyze_output_tokens: analyzeUsage.output_tokens,
+        analyze_cache_read_tokens: analyzeUsage.cache_read_tokens,
+        analyze_cache_create_tokens: analyzeUsage.cache_create_tokens,
       }, {
         onConflict: 'url'
       })

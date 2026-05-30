@@ -19,7 +19,9 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 
-const CLAUDE_MODEL = "claude-sonnet-4-6";
+/** Model used for all generation calls. Exported so callers can persist it as
+ *  a perf-metric (email_templates.model) without re-hardcoding the string. */
+export const CLAUDE_MODEL = "claude-sonnet-4-6";
 
 /** Timeout for AI generation calls (90 seconds — Sonnet 4.6 under load) */
 const AI_TIMEOUT_MS = 90_000;
@@ -49,10 +51,29 @@ export type SystemPromptInput =
   | Array<Anthropic.TextBlockParam>;
 
 /**
+ * Normalized token usage for one Claude call. Field names match the perf-metric
+ * columns added in migration-007 so callers can spread these straight into a
+ * DB insert. The SDK's verbose names (cache_read_input_tokens etc.) are mapped
+ * here once so the rest of the app speaks one vocabulary.
+ */
+export interface ClaudeUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_create_tokens: number;
+}
+
+/** Result of a callClaude call: the generated text plus token usage. */
+export interface ClaudeResult {
+  text: string;
+  usage: ClaudeUsage;
+}
+
+/**
  * Call Claude with a single user-turn prompt.
  *
- * Returns the response text. Throws on failure (with retry handled by the
- * caller, e.g. email-generator.service.ts).
+ * Returns the response text plus token usage. Throws on failure (with retry
+ * handled by the caller, e.g. email-generator.service.ts).
  */
 export async function callClaude(
   prompt: string,
@@ -61,7 +82,7 @@ export async function callClaude(
     temperature?: number;
     systemPrompt?: SystemPromptInput;
   } = {}
-): Promise<string> {
+): Promise<ClaudeResult> {
   const {
     maxTokens = 2000,
     temperature = 1.0,
@@ -110,7 +131,15 @@ export async function callClaude(
       `✅ Claude: ${u.input_tokens}in/${u.output_tokens}out${cacheNote}`
     );
 
-    return firstBlock.text;
+    return {
+      text: firstBlock.text,
+      usage: {
+        input_tokens: u.input_tokens ?? 0,
+        output_tokens: u.output_tokens ?? 0,
+        cache_read_tokens: u.cache_read_input_tokens ?? 0,
+        cache_create_tokens: u.cache_creation_input_tokens ?? 0,
+      },
+    };
   } catch (error) {
     clearTimeout(timeoutId);
 

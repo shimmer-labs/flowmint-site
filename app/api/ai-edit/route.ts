@@ -96,7 +96,7 @@ Respond with ONLY valid JSON (no markdown code blocks):
 
 CRITICAL: Make the MINIMUM change needed. If the edit says "make the CTA more urgent", only change the CTA text. Don't touch anything else.`;
 
-    const response = await callClaude(prompt, {
+    const { text: response } = await callClaude(prompt, {
       maxTokens: 3000,
       temperature: 0,
       systemPrompt: "You are a precise email editor. You make surgical, targeted changes to email templates. Output only valid JSON.",

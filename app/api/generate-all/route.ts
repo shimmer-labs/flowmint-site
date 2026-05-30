@@ -156,6 +156,14 @@ export async function POST(request: NextRequest) {
                 platform,
                 format,
                 analysis_id: analysisId || null,
+                // Perf metrics (migration-007); null if generation didn't report them.
+                gen_ms: email.metrics?.gen_ms ?? null,
+                input_tokens: email.metrics?.input_tokens ?? null,
+                output_tokens: email.metrics?.output_tokens ?? null,
+                cache_read_tokens: email.metrics?.cache_read_tokens ?? null,
+                cache_create_tokens: email.metrics?.cache_create_tokens ?? null,
+                model: email.metrics?.model ?? null,
+                prompt_version: email.metrics?.prompt_version ?? null,
               });
               if (insertError) {
                 throw new Error(`DB insert failed: ${insertError.message}`);
