@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/app/contexts/AuthContext";
@@ -66,6 +66,15 @@ const PLATFORMS = [
   { id: "omnisend", name: "Omnisend" },
 ];
 
+// Tiny stable hash so the sample-email cache key changes when the analysis does
+// (e.g. a re-scan of the same URL with new colors/images). Without this, re-scans
+// reuse the stale cached email.
+function simpleHash(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
 function ResultsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -101,6 +110,12 @@ function ResultsPage() {
 
   // Flow library: greyed "full playbook" toggle.
   const [showPlaybook, setShowPlaybook] = useState(false);
+
+  // Fingerprint the analysis so the sample cache busts when the underlying
+  // brand data changes (a re-scan), not just when the analysis id changes.
+  const analysisHash = useMemo(() => (analysis ? simpleHash(JSON.stringify(analysis)) : ""), [analysis]);
+  const sampleCacheKey = (flowId: string) =>
+    `sample-${analysisId}-${flowId}-${selectedPlatform}-${selectedFormat}-${analysisHash}`;
 
   // Batch generation of the rest of the active flow.
   const [batchGenerating, setBatchGenerating] = useState(false);
@@ -144,7 +159,7 @@ function ResultsPage() {
 
     // Cache previewed samples so switching flows (or returning after signup)
     // doesn't re-burn a generation. Regenerate clears the key first (see below).
-    const cacheKey = `sample-${analysisId}-${activeFlow.id}-${selectedPlatform}-${selectedFormat}`;
+    const cacheKey = sampleCacheKey(activeFlow.id);
     const cached = typeof window !== "undefined" ? sessionStorage.getItem(cacheKey) : null;
     if (cached) {
       try {
@@ -193,7 +208,7 @@ function ResultsPage() {
   // Regenerate = drop the cached sample for the current selection, then re-run.
   const regenerateSample = () => {
     if (analysisId && activeFlow) {
-      sessionStorage.removeItem(`sample-${analysisId}-${activeFlow.id}-${selectedPlatform}-${selectedFormat}`);
+      sessionStorage.removeItem(sampleCacheKey(activeFlow.id));
     }
     setSampleNonce((n) => n + 1);
   };
@@ -225,7 +240,7 @@ function ResultsPage() {
       if (reqId === sampleReqId.current) {
         setSampleEmail(data.email);
         try {
-          sessionStorage.setItem(`sample-${analysisId}-${activeFlow.id}-${selectedPlatform}-${selectedFormat}`, JSON.stringify(data.email));
+          sessionStorage.setItem(sampleCacheKey(activeFlow.id), JSON.stringify(data.email));
         } catch {}
         setShowTweak(false);
         setTweakInput("");
