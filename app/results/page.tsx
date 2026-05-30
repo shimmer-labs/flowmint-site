@@ -304,7 +304,7 @@ function ResultsPage() {
         if (Date.now() - pollStartTime > POLL_TIMEOUT_MS) {
           if (pollRef.current) clearInterval(pollRef.current);
           setBatchGenerating(false);
-          setBatchError("Generation timed out after 5 minutes. Some emails may still be processing — check your Templates page.");
+          setBatchError("This timed out after 5 minutes. Some emails may still be writing. Check your Templates page.");
           return;
         }
 
@@ -336,7 +336,7 @@ function ResultsPage() {
           if (consecutiveErrors >= 5) {
             if (pollRef.current) clearInterval(pollRef.current);
             setBatchGenerating(false);
-            setBatchError("Lost connection to the server. Check your Templates page — some emails may have been saved.");
+            setBatchError("Lost the connection. Check your Templates page, some emails may have been saved.");
           }
         }
       }, 2000);
@@ -407,7 +407,7 @@ function ResultsPage() {
               onClick={() => router.push("/")}
               className="text-gray-600 hover:text-gray-900 transition-colors font-medium text-sm"
             >
-              Analyze Another Site
+              Scan another website
             </button>
           </div>
         </div>
@@ -469,7 +469,7 @@ function ResultsPage() {
 
             {/* Images we grabbed */}
             <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Images from your site</div>
+              <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Images from your website</div>
               {hasImages ? (
                 <>
                   <div className="flex gap-3">
@@ -485,7 +485,7 @@ function ResultsPage() {
                   <p className="text-xs text-gray-500 mt-2">We&apos;ll use these in your emails.</p>
                 </>
               ) : (
-                <p className="text-sm text-gray-500">No brand images detected — emails will be text-led.</p>
+                <p className="text-sm text-gray-500">No brand images found, so your emails will be text-led.</p>
               )}
             </div>
           </div>
@@ -505,7 +505,7 @@ function ResultsPage() {
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">Your first email{activeFlow ? `: ${activeFlow.name}` : ""}</h2>
-                <p className="text-gray-600 text-sm">Generated from your brand, ready for {PLATFORMS.find((p) => p.id === selectedPlatform)?.name}.</p>
+                <p className="text-gray-600 text-sm">Written from your brand, ready for {PLATFORMS.find((p) => p.id === selectedPlatform)?.name}.</p>
               </div>
               {/* Compact platform / format controls */}
               <div className="flex flex-wrap items-center gap-2">
@@ -553,7 +553,7 @@ function ResultsPage() {
                       <p className="font-semibold text-gray-900">{sampleEmail.subject}</p>
                     </div>
                     <div>
-                      <span className="text-[10px] font-semibold text-gray-400 uppercase">Preheader</span>
+                      <span className="text-[10px] font-semibold text-gray-400 uppercase">Preview text</span>
                       <p className="text-sm text-gray-600">{sampleEmail.preheader}</p>
                     </div>
                   </div>
@@ -622,31 +622,31 @@ function ResultsPage() {
               <div className="text-sm text-gray-700">
                 Like this one?{" "}
                 {restCount > 0
-                  ? `Generate the other ${restCount} email${restCount !== 1 ? "s" : ""} in ${activeFlow?.name}.`
-                  : `Generate ${activeFlow?.name}.`}
+                  ? `Write the other ${restCount} email${restCount !== 1 ? "s" : ""} in ${activeFlow?.name}.`
+                  : `Write ${activeFlow?.name}.`}
               </div>
               {user ? (
                 <button
                   onClick={() => handleGenerateRest()}
                   className="bg-mint-600 text-white font-semibold text-sm px-5 py-2.5 rounded-lg hover:bg-mint-700 transition-colors whitespace-nowrap"
                 >
-                  Generate the rest &rarr;
+                  Write the rest &rarr;
                 </button>
               ) : (
                 <Link
                   href={`/signup?redirectTo=${encodeURIComponent(`/results?id=${analysisId}${activeFlow ? `&flow=${activeFlow.id}` : ""}`)}`}
                   className="bg-mint-600 text-white font-semibold text-sm px-5 py-2.5 rounded-lg hover:bg-mint-700 transition-colors whitespace-nowrap text-center"
                 >
-                  Create free account &amp; continue &rarr;
+                  Make a free account &amp; keep going &rarr;
                 </Link>
               )}
             </div>
 
             {/* Flow library: why each flow matters */}
             <div className="mt-10">
-              <h2 className="text-2xl font-bold text-gray-900">Flows a business like yours should be running</h2>
+              <h2 className="text-2xl font-bold text-gray-900">Emails a business like yours should be sending</h2>
               <p className="text-gray-600 text-sm mt-1 mb-5">
-                Start with these. Each one&apos;s a proven play &mdash; tap to preview it, or expand to see why it works.
+                Start with these. Each one&apos;s a proven play. Tap one to see it.
               </p>
 
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -687,7 +687,7 @@ function ResultsPage() {
                             }}
                             className="text-sm font-medium text-mint-600 hover:text-mint-700"
                           >
-                            Preview this flow &rarr;
+                            See this one &rarr;
                           </button>
                         )}
                       </div>
@@ -703,7 +703,7 @@ function ResultsPage() {
                     onClick={() => setShowPlaybook((s) => !s)}
                     className="text-sm font-medium text-gray-600 hover:text-gray-900"
                   >
-                    {showPlaybook ? "Hide the full playbook" : `See all ${fullPlaybook.length} flows a business like yours should run`} {showPlaybook ? "↑" : "↓"}
+                    {showPlaybook ? "Hide these" : "See the other emails you should send"} {showPlaybook ? "↑" : "↓"}
                   </button>
                   {showPlaybook && (
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
@@ -732,13 +732,13 @@ function ResultsPage() {
             {/* Primary CTA — last, the emotional close */}
             <div className="mt-10 bg-gradient-to-br from-mint-600 to-mint-800 rounded-2xl p-8 text-center text-white shadow-xl">
               <h3 className="text-2xl font-bold mb-2">You&apos;ve seen one email. Here&apos;s the whole campaign.</h3>
-              <p className="opacity-90 mb-5">Generate every flow we recommend for your business, ready to push to your CRM.</p>
+              <p className="opacity-90 mb-5">We&apos;ll write every email we recommend for your business, ready to send to your CRM.</p>
               {user ? (
                 <button
                   onClick={() => handleGenerateRest(analysis.recommendedFlows.map((f) => f.id))}
                   className="bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl text-lg"
                 >
-                  Build my full campaign &rarr;
+                  Write my whole campaign &rarr;
                 </button>
               ) : (
                 <>
@@ -746,9 +746,9 @@ function ResultsPage() {
                     href={`/signup?redirectTo=${encodeURIComponent(`/results?id=${analysisId}${activeFlow ? `&flow=${activeFlow.id}` : ""}`)}`}
                     className="inline-block bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl text-lg"
                   >
-                    Create free account &amp; build it &rarr;
+                    Make a free account &amp; build it &rarr;
                   </Link>
-                  <p className="text-sm mt-4 opacity-75">Free account to save your campaign — takes 10 seconds</p>
+                  <p className="text-sm mt-4 opacity-75">Free account to save your campaign, takes 10 seconds</p>
                 </>
               )}
             </div>
@@ -785,7 +785,7 @@ function ResultsPage() {
                 onClick={() => {
                   if (pollRef.current) clearInterval(pollRef.current);
                   setBatchGenerating(false);
-                  setBatchError("Generation cancelled. Some emails may have been saved — check your Templates page.");
+                  setBatchError("Stopped. Some emails may have been saved, check your Templates page.");
                 }}
                 className="text-sm text-gray-400 hover:text-gray-600 mt-4 underline"
               >
@@ -830,7 +830,7 @@ function ResultsPage() {
               </a>
             </div>
             {beta ? (
-              <p className="text-sm text-gray-500 mt-6">You&apos;re in the beta — generating, editing, and pushing are all unlocked.</p>
+              <p className="text-sm text-gray-500 mt-6">You&apos;re in the beta, so writing, editing, and sending are all unlocked.</p>
             ) : (
               <div className="mt-8 pt-6 border-t border-mint-200">
                 <p className="text-sm text-gray-600 mb-4">Ready to export? Choose a plan:</p>
@@ -847,7 +847,7 @@ function ResultsPage() {
                     }}
                     className="bg-white text-gray-700 font-semibold py-3 px-6 rounded-lg border-2 border-gray-200 hover:border-mint-300 transition-colors"
                   >
-                    Single Flow — $29
+                    Single Flow ($29)
                   </button>
                   <button
                     onClick={() => {
@@ -861,7 +861,7 @@ function ResultsPage() {
                     }}
                     className="bg-mint-700 text-white font-semibold py-3 px-6 rounded-lg hover:bg-mint-800 transition-colors"
                   >
-                    All Flows — $79 (Best Value)
+                    All Flows ($79, best value)
                   </button>
                 </div>
               </div>

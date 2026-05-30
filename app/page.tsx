@@ -210,8 +210,8 @@ export default function Home() {
             Email Flows That Match Your Brand Voice
           </h1>
           <p className="text-xl text-gray-600 mb-12 max-w-2xl mx-auto">
-            Enter your website URL and FlowMint generates personalized email
-            campaigns in minutes. Works with any site — Shopify, WooCommerce,
+            Enter your website URL and FlowMint writes personalized email
+            campaigns in minutes. Works with any website: Shopify, WooCommerce,
             Squarespace, or custom.
           </p>
 
@@ -232,7 +232,7 @@ export default function Home() {
                 disabled={loading || !url}
                 className="bg-mint-600 hover:bg-mint-700 disabled:bg-gray-300 text-white font-medium py-4 px-8 rounded-lg transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:cursor-not-allowed whitespace-nowrap"
               >
-                Analyze My Brand
+                Scan my website
               </button>
             </div>
             {error && <p className="mt-4 text-red-600 text-sm">{error}</p>}
@@ -308,14 +308,14 @@ export default function Home() {
               },
               {
                 num: "2",
-                title: "AI Analyzes Your Brand",
+                title: "We read your website",
                 desc: "Claude AI reads your content and learns your tone, colors, audience, and business model.",
                 time: "Automatic",
               },
               {
                 num: "3",
                 title: "Get Email Campaigns",
-                desc: "Receive personalized email flows ready to export to Klaviyo, Mailchimp, or any platform.",
+                desc: "Get personalized email campaigns ready to send to GoHighLevel, Klaviyo, or wherever you send email.",
                 time: "2-3 minutes",
               },
             ].map((step) => (
@@ -343,7 +343,7 @@ export default function Home() {
           <div className="grid grid-cols-3 gap-8 max-w-lg mx-auto">
             <div>
               <div className="text-3xl font-bold text-gray-900">18+</div>
-              <div className="text-sm text-gray-500 mt-1">Email flows</div>
+              <div className="text-sm text-gray-500 mt-1">Email campaigns</div>
             </div>
             <div>
               <div className="text-3xl font-bold text-gray-900">5</div>
@@ -365,12 +365,12 @@ export default function Home() {
           </h2>
           <p className="text-center text-gray-600 mb-8 text-lg">
             {beta
-              ? "We're in beta — everything's free while we test. Here's where pricing is headed."
-              : "Analyze and generate for free. Pay only when you're ready to export."}
+              ? "We're in beta, so everything's free while we test. Here's where pricing's headed."
+              : "Scan and write for free. Pay only when you're ready to send."}
           </p>
           <div className="bg-mint-50 border border-mint-200 rounded-lg px-6 py-3 text-center mb-12 max-w-xl mx-auto">
             <p className="text-sm text-mint-800">
-              <span className="font-semibold">{beta ? "Free during beta:" : "Always free:"}</span> Analyze your brand + generate + preview all flows. No signup required.
+              <span className="font-semibold">{beta ? "Free during beta:" : "Always free:"}</span> Scan your website + write + preview every email. No signup needed.
             </p>
           </div>
           <div className="relative max-w-4xl mx-auto">
@@ -402,7 +402,7 @@ export default function Home() {
               >
                 Get Started Free &rarr;
               </button>
-              <p className="text-xs text-gray-400 text-center mt-2">Analyze your brand first, then purchase</p>
+              <p className="text-xs text-gray-400 text-center mt-2">Scan your website first, then buy</p>
             </div>
 
             {/* Full Campaign */}
@@ -435,7 +435,7 @@ export default function Home() {
               >
                 Get Started Free &rarr;
               </button>
-              <p className="text-xs text-gray-400 text-center mt-2">Analyze your brand first, then purchase</p>
+              <p className="text-xs text-gray-400 text-center mt-2">Scan your website first, then buy</p>
             </div>
 
             {/* Unlimited */}
@@ -464,7 +464,7 @@ export default function Home() {
                 onClick={() => handlePurchase('unlimited')}
                 className="w-full py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors text-sm"
               >
-                Subscribe — $149/mo
+                Subscribe for $149/mo
               </button>
             </div>
             </div>
@@ -485,13 +485,13 @@ export default function Home() {
             {[
               {
                 q: "Do I need a Shopify store?",
-                a: "No! FlowMint works with any website — Shopify, WooCommerce, Squarespace, custom sites, even brick & mortar businesses with a web presence.",
+                a: "No! FlowMint works with any website: Shopify, WooCommerce, Squarespace, custom sites, even a brick-and-mortar shop with a web presence.",
               },
               {
                 q: "How much does it cost?",
                 a: beta
-                  ? "Right now FlowMint is free while we're in beta — analyze, generate, edit, and push as much as you like. We'll give you plenty of warning before any pricing kicks in."
-                  : "Analyze any website for free and preview all generated flows. When you're ready to export, buy a Single Flow ($29) for one flow or a Full Campaign ($79) for all flows. Credits are locked to one brand analysis.",
+                  ? "Right now FlowMint is free while we're in beta. Scan, write, edit, and send as much as you like. We'll give you plenty of warning before any pricing kicks in."
+                  : "Scan any website for free and preview every email. When you're ready to send, buy a Single Flow ($29) for one campaign or a Full Campaign ($79) for all of them. Each one is locked to a single website.",
               },
               {
                 q: "What if I have multiple brands?",
@@ -499,7 +499,7 @@ export default function Home() {
               },
               {
                 q: "Will the emails actually sound like my brand?",
-                a: "Yes. FlowMint analyzes your website content, blog posts, and product descriptions to learn your unique voice. Most users say the first draft is 80-90% ready to use.",
+                a: "Yes. FlowMint reads your website, blog posts, and service pages to learn your voice. Most folks say the first draft is 80-90% ready to use.",
               },
               {
                 q: "What email platforms are supported?",
@@ -507,7 +507,7 @@ export default function Home() {
               },
               {
                 q: "How is this different from ChatGPT?",
-                a: "ChatGPT requires manual prompts and doesn't know your brand. FlowMint automatically analyzes your site, learns your voice, and generates platform-ready templates with the right dynamic variables.",
+                a: "ChatGPT makes you write the prompts and doesn't know your brand. FlowMint reads your website, learns your voice, and writes ready-to-send emails with the right merge fields built in.",
               },
             ].map((faq) => (
               <details
@@ -531,7 +531,7 @@ export default function Home() {
             Ready to launch your email marketing?
           </h2>
           <p className="text-xl text-gray-300 mb-8">
-            Enter your URL above and generate your first campaign in under 5
+            Enter your URL above and write your first campaign in under 5
             minutes.
           </p>
           <button

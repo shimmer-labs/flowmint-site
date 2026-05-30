@@ -285,7 +285,7 @@ export default function SettingsClient({
               {purchasesByType.single_flow.map((p) => (
                 <div key={p.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                   <div>
-                    <div className="text-sm font-medium text-gray-900">Single Flow — {p.flow_id}</div>
+                    <div className="text-sm font-medium text-gray-900">Single Flow: {p.flow_id}</div>
                     <div className="text-xs text-gray-500">
                       {p.analysis_id ? `Analysis: ${p.analysis_id.slice(0, 8)}...` : "Legacy purchase"}
                       {p.exported_at && <span className="ml-2 text-mint-600">Exported</span>}
@@ -435,7 +435,7 @@ export default function SettingsClient({
                   <li>Click <strong>Create new Integration</strong>, name it "FlowMint."</li>
                   <li>Enable these scopes: <span className="font-mono text-xs bg-white px-1 py-0.5 rounded">locations.readonly</span> and <span className="font-mono text-xs bg-white px-1 py-0.5 rounded">emails/builder.write</span>.</li>
                   <li>Copy the token (GHL shows it only once).</li>
-                  <li>Copy the URL from your browser address bar (any page in your sub-account works — we read the location ID out of it).</li>
+                  <li>Copy the URL from your browser address bar (any page in your sub-account works, we read the location ID out of it).</li>
                 </ol>
               </div>
 

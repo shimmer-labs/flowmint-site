@@ -372,7 +372,7 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
             <p className="text-gray-600 mt-1">
               {templates.length} template{templates.length !== 1 ? "s" : ""} across {flowGroups.length} flow{flowGroups.length !== 1 ? "s" : ""}
             </p>
-            <p className="text-sm text-gray-400 mt-1">Tap a flow to expand, then any email to preview the full message or AI-edit it.</p>
+            <p className="text-sm text-gray-400 mt-1">Tap a campaign to open it, then any email to read it or ask AI to change it.</p>
           </div>
         </div>
 
@@ -381,7 +381,7 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
           <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
             <h3 className="text-xl font-bold text-gray-900 mb-2">No templates yet</h3>
             <p className="text-gray-600 mb-6">
-              Analyze a website and generate your email flows to see them here.
+              Scan a website and write your email campaigns to see them here.
             </p>
             <a href="/dashboard" className="inline-block bg-mint-600 text-white font-medium px-6 py-3 rounded-lg hover:bg-mint-700 transition-colors">
               Go to Dashboard
@@ -519,7 +519,7 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
                                     }}
                                     className="text-xs font-medium px-3 py-1.5 rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
                                   >
-                                    AI Edit
+                                    Ask AI to change it
                                   </button>
                                 )}
                               </div>
@@ -702,7 +702,7 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
               disabled={purchasing}
               className="w-full bg-mint-600 text-white font-bold py-3 rounded-lg hover:bg-mint-700 transition-colors disabled:opacity-50"
             >
-              {purchasing ? "Redirecting to checkout..." : `Buy & Export Now — $${purchaseChoice === "single_flow" ? "29" : "79"}`}
+              {purchasing ? "Sending you to checkout..." : `Buy & export now, $${purchaseChoice === "single_flow" ? "29" : "79"}`}
             </button>
 
             <p className="text-xs text-gray-500 text-center mt-3">
@@ -755,7 +755,7 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
                         <li>In GHL: <strong>Settings → Private Integrations</strong> (enable it in Labs first if you don&apos;t see it).</li>
                         <li>Create an integration called <strong>FlowMint</strong>.</li>
                         <li>Check the scopes <strong>View Locations</strong> and <strong>Edit / Write Emails</strong>.</li>
-                        <li>Copy the token &mdash; GHL only shows it once &mdash; and paste it below.</li>
+                        <li>Copy the token (GHL only shows it once) and paste it below.</li>
                       </ol>
                     </details>
 
@@ -869,7 +869,7 @@ export default function TemplatesClient({ user, templates, purchases, isUnlimite
               </div>
               <div className="text-xs text-gray-600 mt-1">
                 {ghlPushResult.skipped > 0
-                  ? `No duplicates created — already-synced emails were skipped. `
+                  ? `No duplicates created, already-synced emails were skipped. `
                   : ""}
                 {ghlPushResult.flowName} lives in your GHL email templates list. Next: wire them into a workflow inside GHL.
               </div>

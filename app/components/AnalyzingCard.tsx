@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 // that races to 85% then stalls is the #1 trust-killer in loading UX). Each phase
 // gets a morphing emoji + the text "flips" into place like a train-station board.
 const PHASES = [
-  { emoji: "🌐", text: "READING YOUR WEBSITE" },
+  { emoji: "🌐", text: "READING EVERY PAGE" },
   { emoji: "🎨", text: "PULLING YOUR COLORS" },
   { emoji: "🗣️", text: "LEARNING YOUR VOICE" },
   { emoji: "🧰", text: "FINDING YOUR SERVICES" },
@@ -64,7 +64,7 @@ export default function AnalyzingCard() {
         {PHASES[phaseIdx].emoji}
       </div>
       <div className="text-xs font-semibold uppercase tracking-[0.25em] text-mint-400 mb-4">
-        Analyzing your brand
+        Reading your website
       </div>
 
       {/* Split-flap departure board. Each WORD is a no-wrap group so words never
@@ -96,7 +96,7 @@ export default function AnalyzingCard() {
       </div>
 
       <p className="text-sm text-gray-400">
-        This usually takes 25&ndash;60 seconds &mdash; we&apos;re reading your whole site, not just the homepage.
+        This usually takes 25&ndash;60 seconds. We&apos;re reading your whole website, not just the homepage.
       </p>
     </div>
   );

@@ -154,11 +154,11 @@ export default function DashboardClient({ user, analyses, purchases, isUnlimited
         {isFirstRun && !loading && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 md:p-8 mb-8">
             <h2 className="text-xl font-bold text-gray-900 mb-1">How it works</h2>
-            <p className="text-gray-500 text-sm mb-6">Paste your URL below to get started — it takes about a minute.</p>
+            <p className="text-gray-500 text-sm mb-6">Paste your URL below to get started. Takes about a minute.</p>
             <div className="grid md:grid-cols-3 gap-5">
               {[
-                { n: 1, t: 'Paste your URL', d: 'We read your site — voice, colors, products, the works.' },
-                { n: 2, t: 'See your first email', d: 'Get one on-brand email instantly, then generate the whole flow.' },
+                { n: 1, t: 'Paste your URL', d: 'We read your website: voice, colors, services, the works.' },
+                { n: 2, t: 'See your first email', d: 'Get one on-brand email right away, then write the whole campaign.' },
                 { n: 3, t: 'Push to your CRM', d: 'Send it straight into GoHighLevel (or 5 other platforms).' },
               ].map((s) => (
                 <div key={s.n} className="flex gap-3">
@@ -182,7 +182,7 @@ export default function DashboardClient({ user, analyses, purchases, isUnlimited
             </div>
             <div className="bg-white rounded-lg border border-gray-200 p-5">
               <div className="text-2xl font-bold text-gray-900">{flowCount}</div>
-              <div className="text-sm text-gray-500">Flows Generated</div>
+              <div className="text-sm text-gray-500">Emails written</div>
             </div>
             <a href="/templates" className="bg-white rounded-lg border border-gray-200 p-5 hover:border-mint-300 transition-colors">
               <div className="text-2xl font-bold text-gray-900">{templateCount}</div>
@@ -211,7 +211,7 @@ export default function DashboardClient({ user, analyses, purchases, isUnlimited
                   disabled={!url}
                   className="bg-mint-600 hover:bg-mint-700 disabled:bg-gray-300 text-white font-medium py-4 px-8 rounded-lg transition-all whitespace-nowrap disabled:cursor-not-allowed"
                 >
-                  Analyze Brand
+                  Scan my website
                 </button>
               </div>
               {error && <p className="mt-4 text-red-600 text-sm">{error}</p>}
@@ -263,7 +263,7 @@ export default function DashboardClient({ user, analyses, purchases, isUnlimited
           <div className="mt-12 bg-gradient-to-r from-mint-50 to-green-50 border border-mint-200 rounded-xl p-8">
             <h3 className="text-lg font-bold text-gray-900 mb-2">Ready to export?</h3>
             <p className="text-gray-600 mb-4">
-              Analyze and preview for free. Purchase when you&apos;re ready to export — starting at $29 per flow.
+              Scan and preview for free. Pay when you&apos;re ready to send, starting at $29 per campaign.
             </p>
             <a href="/#pricing" className="inline-block bg-mint-600 text-white font-medium px-6 py-3 rounded-lg hover:bg-mint-700 transition-colors">
               View Pricing
