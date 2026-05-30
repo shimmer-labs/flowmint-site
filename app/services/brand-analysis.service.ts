@@ -71,6 +71,14 @@ export async function analyzeBrand(scrapedData: ScrapedData): Promise<AnalyzeBra
   return {
     analysis: {
       ...analysis,
+      // Prefer REAL colors scraped from the site over the model's guess; fall
+      // back to the model only for slots we couldn't extract. (Fixes the
+      // "generic Google-blue" guesses on sites like okieplumbing.com.)
+      brandColors: {
+        primary: scrapedData.brandColors?.primary || analysis.brandColors.primary,
+        secondary: scrapedData.brandColors?.secondary || analysis.brandColors.secondary,
+        accent: scrapedData.brandColors?.accent || analysis.brandColors.accent,
+      },
       recommendedFlows: recommendedFlows.slice(0, 3), // Top 3 recommendations
       sourcesAnalyzed: {
         productsCount: scrapedData.products.length,

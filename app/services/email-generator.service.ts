@@ -144,7 +144,7 @@ export async function generateEmail(
 function buildEmailContext(context: EmailGenerationContext): string {
   const { brandAnalysis, platform, format } = context;
   const platformSyntax = getSyntaxInstructions(platform);
-  const hasImages = !!brandAnalysis.images;
+  const hasImages = hasRealImages(brandAnalysis);
   const formatInstructions =
     format === "html"
       ? getHTMLInstructions(hasImages, brandAnalysis.brandColors.primary)
@@ -214,42 +214,38 @@ ${flowGuidance}${tweak}
 Generate the email now:`;
 }
 
+/** True only if we have a real brand PHOTO (hero/product/lifestyle), not just a logo. */
+function hasRealImages(brandAnalysis: BrandAnalysisResult): boolean {
+  const i = brandAnalysis.images;
+  return !!(i && (i.hero || (i.products && i.products.length > 0) || (i.lifestyle && i.lifestyle.length > 0)));
+}
+
 /**
- * Build images section (safely handles missing images)
+ * Build the images section. If the scrape found real photos, list them and tell
+ * the model to use a couple. If it didn't (junk got filtered out upstream), tell
+ * the model to write a clean text-led email instead of inventing or hotlinking
+ * junk. The logo is intentionally NOT offered as a usable image (never a hero).
  */
 function buildImagesSection(brandAnalysis: BrandAnalysisResult, format: "html" | "plain"): string {
-  if (!brandAnalysis.images) {
-    return "";
-  }
-
   const images = brandAnalysis.images;
-  const lines: string[] = ["\n**Available Images (use these in HTML emails):**"];
+  const photos: string[] = [];
+  if (images?.hero) photos.push(images.hero);
+  if (images?.products?.length) photos.push(...images.products);
+  if (images?.lifestyle?.length) photos.push(...images.lifestyle);
 
-  if (images.logo) {
-    lines.push(`- Logo: ${images.logo}`);
-  }
-  if (images.hero) {
-    lines.push(`- Hero Image: ${images.hero}`);
-  }
-  if (images.products && images.products.length > 0) {
-    lines.push("- Product Images:");
-    images.products.forEach((img, i) => {
-      lines.push(`  ${i + 1}. ${img}`);
-    });
-  }
-  if (images.lifestyle && images.lifestyle.length > 0) {
-    lines.push("- Lifestyle Images:");
-    images.lifestyle.forEach((img, i) => {
-      lines.push(`  ${i + 1}. ${img}`);
-    });
+  if (photos.length === 0) {
+    return format === "html"
+      ? "\n**IMAGES:** No usable brand photos were found on the site. Do NOT invent or hotlink any images. Write a clean, text-led HTML email (strong headline, readable typography, brand-color blocks, and a clear CTA button). Text-led is perfectly on-brand."
+      : "";
   }
 
+  const lines = ["\n**Real brand photos (use these EXACT URLs, do not invent others):**"];
+  photos.slice(0, 3).forEach((p, i) => lines.push(`${i + 1}. ${p}`));
   if (format === "html") {
     lines.push(
-      "\nIMPORTANT: Use these real image URLs in your HTML email. Include at least 1-2 images for visual appeal."
+      "\nUse 1-2 of these where they genuinely add value (e.g. a hero up top). Always include alt text. Never use the logo as a hero image, and never invent image URLs."
     );
   }
-
   return lines.join("\n");
 }
 

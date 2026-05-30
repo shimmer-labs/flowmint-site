@@ -205,6 +205,14 @@ Post-analysis page rethink. Shipped in two passes.
 - ROI lines phrased as soft ranges (Klaviyo/Omnisend + general data); footnote disclaims.
 - Follow-up worth noting: the e-com `business-model-mappings.ts` richness from `~/flowmint` (subjectLinePatterns, bestPractices, full emailSequence) was NOT fully ported — we authored a focused service set instead. If we expand verticals, port more of that shape.
 
+### Scrape quality: real colors + image filtering (CRAWL — shipped 2026-05-30)
+
+Okie Plumbing test surfaced two scrape bugs (wrong colors, junk images). Ported the analyzer logic from `~/ai-email-designer`:
+- [x] **Real color extraction** in `scraper.service.ts` (`extractBrandColors`: theme-color → CSS custom props incl. Elementor `--e-global-color-*` → header/nav/button styles, with `isUnusableColor` filtering white/black/gray). `brand-analysis.service.ts` now prefers scraped colors over the model's guess, falling back to the model only for missing slots. Verified: okieplumbing.com now yields `#F6CD6C` gold + `#32373C` charcoal (was Google-blue `#1A73E8`).
+- [x] **Image junk-filter** (`isJunkImage`): rejects SVGs/data-URIs, `dummy`/placeholder/spacer/screenshot/favicon/icon/logo/trust-badge patterns, tiny URL sizes, and empty/anchor srcs. Verified: okieplumbing now returns 4 real construction photos (was the RevSlider `dummy.png` + screenshots).
+- [x] **Email images optional**: `email-generator` only offers real photos; when none, it instructs a clean text-led email (no more forcing junk in, no logo-as-hero).
+- Caveat / WALK: CSS-only extraction misses sites that hide brand colors in *external* CSS (we keep the model's guess there, no regression). True logo-pixel extraction (sharp/node-vibrant) stays WALK.
+
 ### Slice 5: Internal rehearsal
 
 **Goal:** Logan runs the full flow end-to-end on his own (or a dummy) GHL location without intervention. Catches anything the slices missed.
