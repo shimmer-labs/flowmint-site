@@ -204,15 +204,15 @@ export default function Home() {
       <section className="py-24 bg-gradient-to-b from-mint-50 to-white">
         <div className="max-w-4xl mx-auto px-6 text-center">
           <span className="inline-block bg-mint-100 text-mint-700 text-sm font-medium px-4 py-1.5 rounded-full mb-6">
-            AI-Powered Email Marketing
+            Email marketing for local service businesses
           </span>
           <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
-            Email Flows That Match Your Brand Voice
+            Turn your website into emails that bring customers back
           </h1>
           <p className="text-xl text-gray-600 mb-12 max-w-2xl mx-auto">
-            Enter your website URL and FlowMint writes personalized email
-            campaigns in minutes. Works with any website: Shopify, WooCommerce,
-            Squarespace, or custom.
+            Drop in your website and FlowMint writes a full set of customer
+            emails in minutes that sound like you, not a robot. Ready to send
+            from GoHighLevel or wherever you email from.
           </p>
 
           {/* URL Input */}
@@ -254,7 +254,7 @@ export default function Home() {
                   d="M5 13l4 4L19 7"
                 />
               </svg>
-              <span>30-second analysis</span>
+              <span>See it in 30 seconds</span>
             </div>
             <div className="flex items-center gap-2">
               <svg
@@ -270,7 +270,7 @@ export default function Home() {
                   d="M5 13l4 4L19 7"
                 />
               </svg>
-              <span>No signup required to preview</span>
+              <span>No signup to try it</span>
             </div>
             <div className="flex items-center gap-2">
               <svg
@@ -286,7 +286,7 @@ export default function Home() {
                   d="M5 13l4 4L19 7"
                 />
               </svg>
-              <span>Free tier available</span>
+              <span>Free to start</span>
             </div>
           </div>
         </div>
@@ -302,21 +302,21 @@ export default function Home() {
             {[
               {
                 num: "1",
-                title: "Enter Your URL",
-                desc: "We scan your website to understand your brand, products, and voice. Works with any site.",
+                title: "Drop in your website",
+                desc: "Paste your link. We read your whole website to learn your business and how you talk.",
                 time: "30 seconds",
               },
               {
                 num: "2",
-                title: "We read your website",
-                desc: "Claude AI reads your content and learns your tone, colors, audience, and business model.",
-                time: "Automatic",
+                title: "We write your emails",
+                desc: "You get a full set of customer emails that sound like you, not a robot.",
+                time: "About a minute",
               },
               {
                 num: "3",
-                title: "Get Email Campaigns",
-                desc: "Get personalized email campaigns ready to send to GoHighLevel, Klaviyo, or wherever you send email.",
-                time: "2-3 minutes",
+                title: "Send them out",
+                desc: "Push them into GoHighLevel (or wherever you email from) and start bringing customers back.",
+                time: "Minutes",
               },
             ].map((step) => (
               <div key={step.num} className="text-center">
