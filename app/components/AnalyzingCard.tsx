@@ -67,20 +67,25 @@ export default function AnalyzingCard() {
         Analyzing your brand
       </div>
 
-      {/* Split-flap departure board */}
-      <div className="flex flex-wrap justify-center gap-1 mb-6 min-h-[2rem]" aria-label={PHASES[phaseIdx].text}>
-        {display.split("").map((ch, i) =>
-          ch === " " ? (
-            <span key={i} className="w-2" />
-          ) : (
-            <span
-              key={i}
-              className="inline-flex items-center justify-center w-6 h-8 rounded bg-gray-800 text-gray-100 font-mono text-sm border-b-2 border-black/50 shadow-inner"
-            >
-              {ch}
-            </span>
-          )
-        )}
+      {/* Split-flap departure board. Each WORD is a no-wrap group so words never
+          break mid-word; rows wrap between words only. min-height reserves space
+          for up to two rows so the card never changes shape as phases swap. */}
+      <div
+        className="flex flex-wrap justify-center items-center content-center gap-x-3 gap-y-2 mb-6 min-h-[4.75rem]"
+        aria-label={PHASES[phaseIdx].text}
+      >
+        {display.split(" ").map((word, wi) => (
+          <span key={wi} className="inline-flex gap-1 whitespace-nowrap">
+            {word.split("").map((ch, ci) => (
+              <span
+                key={ci}
+                className="inline-flex items-center justify-center w-7 h-9 rounded bg-gray-800 text-mint-300 font-mono font-bold text-base border-b-2 border-black/50 shadow-inner"
+              >
+                {ch}
+              </span>
+            ))}
+          </span>
+        ))}
       </div>
 
       {/* Constant "working" motion */}

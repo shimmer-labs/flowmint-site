@@ -99,8 +99,7 @@ function ResultsPage() {
   const [tweakInput, setTweakInput] = useState("");
   const [tweaking, setTweaking] = useState(false);
 
-  // Flow library: which "what's inside" cards are expanded + the greyed playbook toggle.
-  const [expandedFlows, setExpandedFlows] = useState<Set<string>>(new Set());
+  // Flow library: greyed "full playbook" toggle.
   const [showPlaybook, setShowPlaybook] = useState(false);
 
   // Batch generation of the rest of the active flow.
@@ -654,7 +653,6 @@ function ResultsPage() {
                 {analysis.recommendedFlows.map((flow) => {
                   const meta = getFlowMeta(flow.id);
                   const isActive = activeFlow?.id === flow.id;
-                  const expanded = expandedFlows.has(flow.id);
                   return (
                     <div
                       key={flow.id}
@@ -669,31 +667,14 @@ function ResultsPage() {
                         <p className="text-xs text-mint-700 bg-mint-50 rounded-md px-2.5 py-1.5 mt-3">{meta.roi}</p>
                       )}
                       {meta?.whatToInclude?.length ? (
-                        <div className="mt-3">
-                          <button
-                            onClick={() =>
-                              setExpandedFlows((prev) => {
-                                const n = new Set(prev);
-                                if (n.has(flow.id)) n.delete(flow.id);
-                                else n.add(flow.id);
-                                return n;
-                              })
-                            }
-                            className="text-xs font-medium text-gray-500 hover:text-gray-700"
-                          >
-                            {expanded ? "▾" : "▸"} What&apos;s inside
-                          </button>
-                          {expanded && (
-                            <ul className="mt-2 space-y-1">
-                              {meta.whatToInclude.map((b, i) => (
-                                <li key={i} className="text-xs text-gray-600 flex gap-1.5">
-                                  <span className="text-mint-500">&bull;</span>
-                                  <span>{b}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
+                        <ul className="mt-3 space-y-1">
+                          {meta.whatToInclude.map((b, i) => (
+                            <li key={i} className="text-xs text-gray-600 flex gap-1.5">
+                              <span className="text-mint-500 mt-px">&bull;</span>
+                              <span>{b}</span>
+                            </li>
+                          ))}
+                        </ul>
                       ) : null}
                       <div className="mt-auto pt-4">
                         {isActive ? (
