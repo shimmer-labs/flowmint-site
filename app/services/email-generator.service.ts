@@ -308,9 +308,8 @@ function getFlowSpecificGuidance(
       3: "**Purpose:** (Optional) 'Last day!' if still unclaimed. Final urgency. CTA: Redeem Before Midnight.",
     },
     referral: {
-      1: "**Purpose:** 'Give $20, Get $20' (or similar). Explain referral program. Easy sharing. CTA: Invite Your Friends.",
-      2: "**Purpose:** Reminder. 'Your friends are missing out!' Show program benefits. CTA: Share Your Link.",
-      3: "**Purpose:** Success story. 'Sarah referred 5 friends!' Social proof. Incentive boost. CTA: Start Referring.",
+      1: "**Purpose:** Sent to happy past customers. Ask if they know a neighbor or friend who could use the same service. Make sharing dead simple. Warm, appreciative. CTA: Refer a friend.",
+      2: "**Purpose:** Light reminder. Reinforce the value (help someone they care about get great service) and mention any thank-you you offer for referrals. CTA: Share our info.",
     },
     "product-education": {
       1: "**Purpose:** 'Get the most out of [product].' Setup guide, quick start. Video or images. CTA: Watch Tutorial.",
@@ -358,6 +357,20 @@ function getFlowSpecificGuidance(
     },
     "feedback-survey": {
       1: "**Purpose:** Quick 2-3 question survey. Improve their experience. Thank-you discount for completion. CTA: Take 2-Min Survey.",
+    },
+    "post-job-followup": {
+      1: "**Purpose:** Sent right after the job is done. Thank them, confirm everything's working as expected, make it easy to flag any issue. Warm, genuine, zero sales. CTA: Reply if anything's not perfect.",
+      2: "**Purpose:** 2-3 days later. Light check-in, then ask for a review while the good experience is fresh. Make leaving a review one tap. CTA: Leave us a quick review.",
+      3: "**Purpose:** About a week later. Remind them you're their go-to for next time; mention saving your number or a maintenance option. Helpful, not pushy. CTA: Save our number / Book your next service.",
+    },
+    "seasonal-maintenance": {
+      1: "**Purpose:** The season is changing. Remind past customers it's time for a tune-up and why it matters (avoid breakdowns, lower bills, longer equipment life). Helpful expert tone. CTA: Book your seasonal tune-up.",
+      2: "**Purpose:** Follow-up reminder. Light urgency without fear-mongering (slots fill up before the season hits, beat the rush). CTA: Grab a spot this week.",
+    },
+    "estimate-followup": {
+      1: "**Purpose:** Sent a day or two after giving a quote. Thank them, recap the value and what's included, invite questions. Helpful and confident, not pushy. CTA: Ready to get on the schedule?",
+      2: "**Purpose:** A few days later. Address the usual hesitations (price, timing, financing/options) with reassurance and proof (warranty, reviews, guarantees). CTA: Let's get you booked.",
+      3: "**Purpose:** Final, gentle nudge. Light time/pricing sensitivity and an easy door to revisit or adjust the quote. No pressure. CTA: We're ready when you are.",
     },
   };
 

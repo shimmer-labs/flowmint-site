@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useAuth } from "@/app/contexts/AuthContext";
 import { analytics } from "@/app/lib/analytics";
 import { isBetaOpenAccessClient } from "@/app/lib/beta-client";
+import { playbookFor, getFlowDefinition } from "@/app/utils/flow-mappings";
+import { getFlowMeta, FLOW_LIBRARY_FOOTNOTE } from "@/app/utils/flow-library";
 
 interface FlowRecommendation {
   id: string;
@@ -96,6 +98,10 @@ function ResultsPage() {
   const [showTweak, setShowTweak] = useState(false);
   const [tweakInput, setTweakInput] = useState("");
   const [tweaking, setTweaking] = useState(false);
+
+  // Flow library: which "what's inside" cards are expanded + the greyed playbook toggle.
+  const [expandedFlows, setExpandedFlows] = useState<Set<string>>(new Set());
+  const [showPlaybook, setShowPlaybook] = useState(false);
 
   // Batch generation of the rest of the active flow.
   const [batchGenerating, setBatchGenerating] = useState(false);
@@ -259,20 +265,22 @@ function ResultsPage() {
     setTimeout(() => setCopySuccess(false), 2000);
   };
 
-  // Generate the remaining emails of the active flow (the committed next step).
-  const handleGenerateRest = async () => {
-    if (!activeFlow) return;
+  // Generate one or more flows. No args = the active flow (mid CTA);
+  // pass flow ids to build the whole recommended campaign (primary CTA).
+  const handleGenerateRest = async (flowIds?: string[]) => {
+    const ids = flowIds && flowIds.length ? flowIds : activeFlow ? [activeFlow.id] : [];
+    if (!ids.length) return;
     setBatchGenerating(true);
     setBatchComplete(false);
     setBatchError(null);
-    analytics.generateFlow(activeFlow.id);
+    ids.forEach((id) => analytics.generateFlow(id));
 
     try {
       const res = await fetch("/api/generate-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          flowIds: [activeFlow.id],
+          flowIds: ids,
           brandAnalysis: analysis,
           platform: selectedPlatform,
           format: selectedFormat,
@@ -369,8 +377,11 @@ function ResultsPage() {
 
   const images = analysis.images;
   const hasImages = !!(images?.logo || images?.hero);
-  const otherFlows = analysis.recommendedFlows.filter((f) => f.id !== activeFlow?.id);
   const restCount = activeFlow ? Math.max(activeFlow.emailCount - 1, 0) : 0;
+  // Full playbook for this business type; greyed extras = playbook minus the headline recommendations.
+  const recommendedIds = new Set(analysis.recommendedFlows.map((f) => f.id));
+  const fullPlaybook = playbookFor(analysis.businessModel);
+  const playbookExtras = fullPlaybook.filter((id) => !recommendedIds.has(id));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -607,36 +618,146 @@ function ResultsPage() {
               ) : null}
             </div>
 
-            {/* Up next: the rest of this flow as a dimmed roadmap */}
-            {restCount > 0 && (
-              <div className="mt-5">
-                <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Up next in this flow</div>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {Array.from({ length: restCount }).map((_, i) => (
-                    <div key={i} className="bg-white border border-dashed border-gray-300 rounded-xl p-4 opacity-60">
-                      <div className="text-sm font-semibold text-gray-700">Email {i + 2}</div>
-                      <div className="text-xs text-gray-400">Generates when you continue</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Primary CTA */}
-            <div className="mt-6 bg-gradient-to-br from-mint-600 to-mint-800 rounded-2xl p-8 text-center text-white shadow-xl">
-              <h3 className="text-2xl font-bold mb-2">Love it? Generate the rest of this flow</h3>
-              <p className="opacity-90 mb-5">
+            {/* Mid-page CTA: finish THIS flow (small) */}
+            <div className="mt-6 rounded-xl border border-mint-200 bg-mint-50 px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="text-sm text-gray-700">
+                Like this one?{" "}
                 {restCount > 0
-                  ? `${restCount} more email${restCount !== 1 ? "s" : ""} in ${activeFlow?.name}`
-                  : `${activeFlow?.name} is a single-email flow`}
-              </p>
+                  ? `Generate the other ${restCount} email${restCount !== 1 ? "s" : ""} in ${activeFlow?.name}.`
+                  : `Generate ${activeFlow?.name}.`}
+              </div>
               {user ? (
                 <button
-                  onClick={handleGenerateRest}
-                  disabled={!activeFlow}
-                  className="bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed text-lg"
+                  onClick={() => handleGenerateRest()}
+                  className="bg-mint-600 text-white font-semibold text-sm px-5 py-2.5 rounded-lg hover:bg-mint-700 transition-colors whitespace-nowrap"
                 >
-                  Generate the rest of this flow &rarr;
+                  Generate the rest &rarr;
+                </button>
+              ) : (
+                <Link
+                  href={`/signup?redirectTo=${encodeURIComponent(`/results?id=${analysisId}${activeFlow ? `&flow=${activeFlow.id}` : ""}`)}`}
+                  className="bg-mint-600 text-white font-semibold text-sm px-5 py-2.5 rounded-lg hover:bg-mint-700 transition-colors whitespace-nowrap text-center"
+                >
+                  Create free account &amp; continue &rarr;
+                </Link>
+              )}
+            </div>
+
+            {/* Flow library: why each flow matters */}
+            <div className="mt-10">
+              <h2 className="text-2xl font-bold text-gray-900">Flows a business like yours should be running</h2>
+              <p className="text-gray-600 text-sm mt-1 mb-5">
+                Start with these. Each one&apos;s a proven play &mdash; tap to preview it, or expand to see why it works.
+              </p>
+
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {analysis.recommendedFlows.map((flow) => {
+                  const meta = getFlowMeta(flow.id);
+                  const isActive = activeFlow?.id === flow.id;
+                  const expanded = expandedFlows.has(flow.id);
+                  return (
+                    <div
+                      key={flow.id}
+                      className={`bg-white rounded-xl border-2 p-5 flex flex-col ${isActive ? "border-mint-500 ring-2 ring-mint-50" : "border-gray-200"}`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <h3 className="font-bold text-gray-900">{flow.name}</h3>
+                        <span className="text-[10px] text-gray-400 whitespace-nowrap">{flow.emailCount} email{flow.emailCount !== 1 ? "s" : ""}</span>
+                      </div>
+                      <p className="text-sm text-gray-600">{meta?.goal ?? flow.description}</p>
+                      {meta?.roi && (
+                        <p className="text-xs text-mint-700 bg-mint-50 rounded-md px-2.5 py-1.5 mt-3">{meta.roi}</p>
+                      )}
+                      {meta?.whatToInclude?.length ? (
+                        <div className="mt-3">
+                          <button
+                            onClick={() =>
+                              setExpandedFlows((prev) => {
+                                const n = new Set(prev);
+                                if (n.has(flow.id)) n.delete(flow.id);
+                                else n.add(flow.id);
+                                return n;
+                              })
+                            }
+                            className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                          >
+                            {expanded ? "▾" : "▸"} What&apos;s inside
+                          </button>
+                          {expanded && (
+                            <ul className="mt-2 space-y-1">
+                              {meta.whatToInclude.map((b, i) => (
+                                <li key={i} className="text-xs text-gray-600 flex gap-1.5">
+                                  <span className="text-mint-500">&bull;</span>
+                                  <span>{b}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      ) : null}
+                      <div className="mt-auto pt-4">
+                        {isActive ? (
+                          <span className="text-xs font-medium text-mint-600">&#10003; Previewing above</span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setActiveFlow(flow);
+                              if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                            className="text-sm font-medium text-mint-600 hover:text-mint-700"
+                          >
+                            Preview this flow &rarr;
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Greyed "full playbook" behind an expander */}
+              {playbookExtras.length > 0 && (
+                <div className="mt-6">
+                  <button
+                    onClick={() => setShowPlaybook((s) => !s)}
+                    className="text-sm font-medium text-gray-600 hover:text-gray-900"
+                  >
+                    {showPlaybook ? "Hide the full playbook" : `See all ${fullPlaybook.length} flows a business like yours should run`} {showPlaybook ? "↑" : "↓"}
+                  </button>
+                  {showPlaybook && (
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
+                      {playbookExtras.map((id) => {
+                        const def = getFlowDefinition(id);
+                        const meta = getFlowMeta(id);
+                        if (!def) return null;
+                        return (
+                          <div key={id} className="bg-white border border-dashed border-gray-300 rounded-xl p-4 opacity-70">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-gray-800 text-sm">{def.name}</span>
+                              <span className="text-[10px] text-gray-400 whitespace-nowrap">{def.emailCount} email{def.emailCount !== 1 ? "s" : ""}</span>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">{meta?.goal ?? def.description}</p>
+                            {meta?.roi && <p className="text-[11px] text-gray-400 mt-2">{meta.roi}</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-gray-400 mt-4">{FLOW_LIBRARY_FOOTNOTE}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Primary CTA — last, the emotional close */}
+            <div className="mt-10 bg-gradient-to-br from-mint-600 to-mint-800 rounded-2xl p-8 text-center text-white shadow-xl">
+              <h3 className="text-2xl font-bold mb-2">You&apos;ve seen one email. Here&apos;s the whole campaign.</h3>
+              <p className="opacity-90 mb-5">Generate every flow we recommend for your business, ready to push to your CRM.</p>
+              {user ? (
+                <button
+                  onClick={() => handleGenerateRest(analysis.recommendedFlows.map((f) => f.id))}
+                  className="bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl text-lg"
+                >
+                  Build my full campaign &rarr;
                 </button>
               ) : (
                 <>
@@ -644,39 +765,12 @@ function ResultsPage() {
                     href={`/signup?redirectTo=${encodeURIComponent(`/results?id=${analysisId}${activeFlow ? `&flow=${activeFlow.id}` : ""}`)}`}
                     className="inline-block bg-white text-mint-700 font-bold py-4 px-12 rounded-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl text-lg"
                   >
-                    Create free account &amp; continue &rarr;
+                    Create free account &amp; build it &rarr;
                   </Link>
-                  <p className="text-sm mt-4 opacity-75">Free account to save your flow — takes 10 seconds</p>
+                  <p className="text-sm mt-4 opacity-75">Free account to save your campaign — takes 10 seconds</p>
                 </>
               )}
             </div>
-
-            {/* Secondary: pivot to a different flow */}
-            {otherFlows.length > 0 && (
-              <div className="mt-8">
-                <div className="text-sm font-semibold text-gray-700 mb-3">Or start with a different flow</div>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {otherFlows.map((flow) => (
-                    <button
-                      key={flow.id}
-                      onClick={() => setActiveFlow(flow)}
-                      className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-mint-400 hover:ring-2 hover:ring-mint-50 transition-all"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-semibold text-gray-900 text-sm">{flow.name}</span>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                          flow.priority === "Critical" ? "bg-red-100 text-red-700" :
-                          flow.priority === "High" ? "bg-orange-100 text-orange-700" :
-                          "bg-gray-100 text-gray-700"
-                        }`}>{flow.priority}</span>
-                      </div>
-                      <p className="text-xs text-gray-500 line-clamp-2">{flow.description}</p>
-                      <span className="text-xs text-mint-600 font-medium mt-2 inline-block">Generate this flow instead &rarr;</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 

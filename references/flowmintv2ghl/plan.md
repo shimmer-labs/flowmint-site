@@ -198,11 +198,12 @@ Post-analysis page rethink. Shipped in two passes.
 - [x] Split-flap / departure-board loading animation in `AnalyzingCard` (morphing emoji per phase + scramble-resolve text on a dark card; honest, no fake %). Homepage + dashboard.
 - [x] Inline "Ask AI to tweak it" on the results sample: ghost button + composer + quick chips (shorter / more casual / add an offer / less salesy), via a new optional `editInstruction` param on `/api/generate-email` (ephemeral, no auth, unlimited for free users). Verified: shortens on request, still closes HTML + keeps unsubscribe.
 
-**Pass 2 — TODO (the bigger rework). Decisions locked:**
-- [ ] Reorder: Brand Card → first email → small mid CTA → flow library → big primary CTA last.
-- [ ] Flow-value cards: recommended (color, click-to-preview) + "full playbook" greyed **behind an expander**. Each card: why/goal + a few what-to-include bullets + a **named-range ROI stat with a "Klaviyo/Omnisend benchmarks, your results vary" footnote**.
-- [ ] **Author a SERVICE-BUSINESS flow library** (welcome/new-lead, post-job follow-up + review ask, seasonal maintenance reminder, reactivation/win-back, referral) with why/goals/ROI — the beta cohort is local service, not e-com. Port + adapt the rich metadata shape from `~/flowmint/app/utils/flow-mappings.ts` (862-line: purpose, triggerEvent, expectedConversionRate, bestPractices, emailSequence) + business-model mappings into flowmint-site as the single source of truth. This absorbs the parked "ICP-aware flow library expansion" item.
-- ROI benchmark sources gathered (Klaviyo/Omnisend): welcome ~45-50% open / ~$2-3 per contact; cart-style ~50% open; 3-email sequences ~6.5x single-email revenue.
+**Pass 2 — DONE (2026-05-30):**
+- [x] Reorder: Brand Card → first email → small mid CTA → flow library → big primary CTA last. Mid CTA generates the active flow; big CTA generates the full recommended campaign.
+- [x] Flow-value cards: recommended (color, click-to-preview, "what's inside" expander) + "full playbook" greyed **behind an expander**. Each card: goal + what-to-include bullets + a named-range ROI line, with the "Klaviyo/Omnisend benchmarks, your results vary" footnote once under the cards.
+- [x] **Authored a SERVICE-BUSINESS flow library.** Added service flows to `app/utils/flow-mappings.ts` (post-job-followup, seasonal-maintenance, estimate-followup, referral) + per-email generation guidance in `email-generator.service.ts`; `recommendFlows`/`playbookFor` now return a service-ordered playbook for non-store businesses, e-com order otherwise. Card content (goal/bullets/ROI) lives in the new `app/utils/flow-library.ts` (client-safe), covering the service set + e-com flows. This absorbs the parked "ICP-aware flow library expansion" item.
+- ROI lines phrased as soft ranges (Klaviyo/Omnisend + general data); footnote disclaims.
+- Follow-up worth noting: the e-com `business-model-mappings.ts` richness from `~/flowmint` (subjectLinePatterns, bestPractices, full emailSequence) was NOT fully ported — we authored a focused service set instead. If we expand verticals, port more of that shape.
 
 ### Slice 5: Internal rehearsal
 

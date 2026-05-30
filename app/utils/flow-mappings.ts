@@ -82,6 +82,36 @@ export const FLOW_DEFINITIONS: Record<string, FlowDefinition> = {
     emailCount: 1,
     priority: "Medium",
     description: "Gather customer feedback"
+  },
+
+  // --- Service-business flows (local service / contractor / appointment-based) ---
+  "post-job-followup": {
+    id: "post-job-followup",
+    name: "Post-Job Follow-Up",
+    emailCount: 3,
+    priority: "High",
+    description: "Thank customers after the job, confirm they're happy, and earn the review"
+  },
+  "seasonal-maintenance": {
+    id: "seasonal-maintenance",
+    name: "Seasonal Maintenance Reminder",
+    emailCount: 2,
+    priority: "High",
+    description: "Bring past customers back for seasonal tune-ups and service"
+  },
+  "estimate-followup": {
+    id: "estimate-followup",
+    name: "Estimate Follow-Up",
+    emailCount: 3,
+    priority: "High",
+    description: "Win back leads who got a quote but haven't booked yet"
+  },
+  referral: {
+    id: "referral",
+    name: "Referral Request",
+    emailCount: 2,
+    priority: "Medium",
+    description: "Turn happy customers into word-of-mouth referrals"
   }
 } as const;
 
@@ -111,18 +141,56 @@ export function getAllFlows(): FlowDefinition[] {
 }
 
 /**
- * Recommend flows based on business model
+ * Is this business model a local-service / contractor / appointment-based business
+ * (vs e-commerce)? The beta cohort is overwhelmingly the former (HVAC, roofing,
+ * fencing, photography), and their playbook is different from a store's.
+ */
+export function isServiceBusiness(businessModel: string): boolean {
+  const m = (businessModel || "").toLowerCase();
+  const ecom = m.includes("ecommerce") || m.includes("e-commerce") || m.includes("store") || m.includes("retail") || m.includes("shop");
+  return !ecom;
+}
+
+// Ordered playbooks (strongest first). The first 3 become the headline
+// recommendations (brand-analysis slices the top 3); the rest are the
+// "full playbook" shown greyed on the results page.
+const SERVICE_PLAYBOOK = [
+  "welcome",
+  "post-job-followup",
+  "review-request",
+  "seasonal-maintenance",
+  "about-to-lapse",
+  "estimate-followup",
+  "referral",
+  "feedback-survey",
+];
+
+const ECOM_PLAYBOOK = [
+  "welcome",
+  "cart-abandonment",
+  "checkout-abandonment",
+  "post-purchase-onboarding",
+  "back-in-stock",
+  "cross-sell",
+  "about-to-lapse",
+  "review-request",
+  "feedback-survey",
+];
+
+/**
+ * Ordered list of flow IDs that a business of this type should run
+ * (recommended-first). Drives both the headline recommendations and the
+ * greyed "full playbook" on the results page.
+ */
+export function playbookFor(businessModel: string): string[] {
+  return isServiceBusiness(businessModel) ? SERVICE_PLAYBOOK : ECOM_PLAYBOOK;
+}
+
+/**
+ * Recommend flows based on business model (full ordered playbook for the type).
  */
 export function recommendFlows(businessModel: string): FlowDefinition[] {
-  const allFlows = getAllFlows();
-
-  // E-commerce gets all flows
-  if (businessModel.toLowerCase().includes('ecommerce') ||
-      businessModel.toLowerCase().includes('e-commerce') ||
-      businessModel.toLowerCase().includes('store')) {
-    return allFlows;
-  }
-
-  // SaaS/Service businesses - exclude product-specific flows
-  return allFlows.filter(flow => !flow.requiresEcommerce);
+  return playbookFor(businessModel)
+    .map((id) => FLOW_DEFINITIONS[id])
+    .filter(Boolean);
 }
