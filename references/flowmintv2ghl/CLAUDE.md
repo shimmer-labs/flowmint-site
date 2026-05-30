@@ -96,7 +96,7 @@ Filled in March 2026 after orientation pass. Keep accurate; this is what stops y
 - GHL has no API to create or edit workflows. Never write code that assumes it can. Templates are pushed; workflow wiring is manual.
 - Merge-field syntax is case-sensitive and fails silently. The generator must always emit a fallback on personalization fields (e.g. `{{contact.first_name || "there"}}`). See `references/flowmintv2ghl/ghl-api-reference.md`.
 - Do not hardcode business data (phone, booking URL, company name) into template copy. Emit GHL Custom Values (`{{custom_values.key}}`) for stable business data.
-- Auth model decision is **locked: private OAuth app**. Build OAuth from day one. Stay unlisted (do not submit to marketplace) through CRAWL and WALK. Per-location access/refresh tokens are stored in Supabase; refresh-on-401 wrapper around every GHL fetch. Never write code that assumes Private Integration Tokens.
+- Auth model (reversed 2026-05-28): **CRAWL ships on Private Integration Tokens (PIT)** — the user pastes a GHL PIT, stored in `ghl_connections` (`auth_type='pit'`, null refresh/expiry). The private-OAuth-app path (install/callback routes + `lib/ghl`) is built and on-shelf for RUN, not the active path; do not delete it. Both are handled by `ghlFetch`. Earlier "locked: OAuth, never write PIT code" guidance is superseded — see COORDINATION.md "AUTH MODEL REVERSED".
 
 ## Brand voice (applies to all generated copy, docs, and user-facing text)
 
@@ -121,11 +121,6 @@ When summarizing this conversation during /compact:
 
 ## Current state
 
-- [x] Existing FlowMint codebase read and oriented; architecture section filled in.
-- [x] AI generation step located: `app/services/email-generator.service.ts` invoked from `app/api/generate-{email,flow,all}/route.ts`. Claude Sonnet 4 via raw fetch.
-- [ ] GHL integration not yet started.
-- [ ] AI generation eval not yet run (baseline latency unknown).
-- [ ] OAuth-vs-token architecture decision not yet made. Strong recommendation on the table: private OAuth app. Awaiting confirmation that marketplace at RUN is real.
-- [ ] Path references inside this directory still assume root paths; fix proposed, awaiting go-ahead.
-- Decided: extend FlowMint in place rather than build a separate project.
-- Update this section at the end of each session.
+**Single source of truth for work + status is `references/flowmintv2ghl/plan.md` (the living roadmap). Cross-session decisions + handoff live in `COORDINATION.md`. Do not keep a competing checklist here** — this section is a one-paragraph pointer only.
+
+As of 2026-05-30: CRAWL is shipped and live on flowmint.me — analyze → generate (GHL-default, correct merge fields) → preview the first email → connect GHL via PIT (just-in-time modal, live token test) → push into a FlowMint folder with re-push dedup + "Synced to GHL" status. Per-call perf metrics persist to Supabase (migration-007). Demo recorded for Reed; Reed + Josh testing. See plan.md for done-vs-parked and COORDINATION.md for decisions.

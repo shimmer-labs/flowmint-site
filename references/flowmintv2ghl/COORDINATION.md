@@ -2,11 +2,13 @@
 
 Cross-session state. Read this at the start of every session. Update it at the end of every session. Memory survives session boundaries because it lives here, not in chat history.
 
+**Roadmap + work status are canonical in `plan.md`. This file is the decisions log + cross-session handoff — record *why* and *what changed*, not a duplicate slice checklist.**
+
 ---
 
 ## Current phase
 
-CRAWL (see `references/flowmintv2ghl/PRODUCT_BRIEF.md`). Orientation complete. Pre-build.
+CRAWL — shipped and live on flowmint.me as of 2026-05-30: analyze → generate (GHL-default, correct merge fields) → preview first email → connect GHL via PIT (just-in-time modal, live token test) → push with re-push dedup + "Synced to GHL" status. Per-call perf metrics instrumented (migration-007). Demo recorded for Reed; Reed + Josh testing. WALK items stay parked in `plan.md`. See `PRODUCT_BRIEF.md` for phase scope.
 
 ## Decisions made
 
@@ -62,6 +64,8 @@ CRAWL (see `references/flowmintv2ghl/PRODUCT_BRIEF.md`). Orientation complete. P
 - [x] **Slice 1 OAuth code written and building cleanly.** Migration, install/callback routes, lib/ghl helpers. Pending: manual install verification on Logan's test sub-account (requires migration applied + dev server).
 
 ## Next steps (in order)
+
+**(Superseded 2026-05-30. These were the OAuth marketplace-install deploy steps from before the PIT pivot and the CRAWL ship. Kept for history. Live next steps are in `plan.md`: the email-quality CRAWL verify path, live GHL sync verification, and the WALK parking lot.)**
 
 1. Migration ✅ applied. App profile/version/pricing ✅ filled in (resolved `noAppVersionIdFound`). Marketplace install attempt on shimmerlabs sub-account → GHL generated a real OAuth `code` and sent it to `https://flowmint.me/api/integrations/callback?code=...`. Production 404'd because the new routes haven't been deployed yet. Code is burned.
 2. **Logan (Vercel):** add to project env vars: `GHL_CLIENT_ID`, `GHL_CLIENT_SECRET`, `GHL_REDIRECT_URI=https://flowmint.me/api/integrations/callback` (prod value, NOT localhost), `GHL_OAUTH_SCOPES`, `OAUTH_STATE_SECRET`. Without these prod will throw at runtime.
@@ -134,12 +138,12 @@ CRAWL (see `references/flowmintv2ghl/PRODUCT_BRIEF.md`). Orientation complete. P
   - `scripts/ghl-baseline-eval.ts` — updated for new `analyzeBrand` shape (4th caller, caught by build).
   - `scripts/perf-summary.ts` — new readout script.
 - **Migration applied + verified (2026-05-29):** `supabase/migration-007-perf-metrics.sql` applied by Logan in the SQL editor. Verified live via `npx tsx --env-file=.env.local scripts/perf-summary.ts` — selecting the new columns ran clean (PostgREST would error on a missing column), so both tables have them. No rows with metrics yet (nothing generated since apply).
-- **Schema backup partially patched:** `references/supabase-schema.md` — the two changed tables' column lists updated by hand and flagged as a partial patch. **Still TODO: full re-export via Supabase MCP next session** (refreshes indexes/RLS/FK sections too). MCP is configured but needs a Claude Code restart to be callable — see [[supabase-mcp-configured]].
+- **Schema backup re-exported (DONE 2026-05-30):** `references/supabase-schema.md` is now a full live re-export via the read-only Supabase MCP (columns/indexes/RLS via `execute_sql`, FKs via `list_tables`), reflecting migration-007 + 008 + `ghl_connections`. The read-only MCP is enough to refresh it — no SQL-editor round-trip, no restart. (The earlier "needs a Claude Code restart" note only applied to the first mid-session load.)
 
 ## Notes for the next session
 
 - Architecture section in `references/flowmintv2ghl/CLAUDE.md` is real, not a TODO. Re-read it before touching code.
-- Auth model is locked to private OAuth app. Do not write PIT code.
+- Auth model: CRAWL ships on PIT (shipped + live). OAuth code is on-shelf for RUN. The earlier "OAuth-only, do not write PIT code" guidance is superseded — see "AUTH MODEL REVERSED" above.
 - `plan.md` is alive. Check off items as they ship. Park asides immediately. Re-rank.
 - Pilot cohort = Reed + 2 office testers. Prioritize for "testable in someone else's hands."
 - Before writing OAuth code, run the plan.md annotation cycle on Slice 1 with Logan.

@@ -27,6 +27,8 @@ Small business owners with any website (Shopify, WooCommerce, Squarespace, custo
 
 ## Pricing — Credit-Based Model (March 2026)
 
+> **PAUSED during beta (2026-05).** `BETA_OPEN_ACCESS=true` (+ `NEXT_PUBLIC_BETA_OPEN_ACCESS`) makes every user Unlimited and greys out all pricing in-app — everything is free for the Reed/Josh beta. The model below is what flips back on when beta ends (tear out the flag; see plan.md parking lot).
+
 **Pivoted from flat one-time purchases ($49/$99/$149) to per-brand credits.**
 
 | Tier | Price | Type | What You Get |
@@ -134,20 +136,21 @@ npm run start            # Start production server
 
 ## Features
 
-### What's Live
-- [x] Brand analysis (any website — scrapes content, analyzes voice/colors/products)
-- [x] 18+ email flow types with AI generation
-- [x] Multi-platform syntax (Klaviyo, Mailchimp, ActiveCampaign, GetResponse, Customer.io, OmniSend, Shopify Email)
-- [x] Export ZIP with templates
-- [x] Platform API push (Klaviyo + others)
+### What's Live (beta, on flowmint.me)
+- [x] Brand analysis (any website — scrapes content, analyzes voice/colors/products, grabs logo + hero)
+- [x] 9 email flows with AI generation (welcome, cart abandonment, win-back, review request, and more)
+- [x] One-email instant preview, then "generate the rest of this flow" (no big upfront batch); honest loading (no fake progress bar)
+- [x] Multi-platform merge-field syntax — GoHighLevel (default), Klaviyo, Mailchimp, ActiveCampaign, Customer.io, OmniSend
+- [x] Push to GoHighLevel via Private Integration Token: just-in-time connect modal w/ live token test, FlowMint folder, re-push dedup + "Synced to GHL" status
+- [x] Klaviyo + Mailchimp API push (ActiveCampaign / Customer.io / OmniSend stubbed)
 - [x] AI template editing (Claude-powered)
-- [x] Credit-based billing via Stripe ($29/$79/$149)
-- [x] Free tier: unlimited analysis + generation + preview
-- [x] Inline purchase modals on templates page
-- [x] Purchase badges on dashboard analysis cards
-- [x] Stripe billing portal for Unlimited subscribers
-- [x] Supabase auth (email/password)
+- [x] Per-call perf metrics persisted (migration-007) + `scripts/perf-summary.ts` report
+- [x] **Beta mode:** paywalls off, pricing greyed ("free during beta"). Credit model ($29/$79/$149) is built but paused — see Pricing section.
+- [x] Supabase auth (email/password); anonymous analysis claimed on signup
+- [x] Dashboard: past analyses + GHL connection status
 - [x] Mobile responsive
+
+> Removed/changed since the original list: Download/Export ZIP removed; inline purchase modals + purchase badges greyed out under beta mode; "18+ flows" was aspirational (9 today); GetResponse / Shopify Email syntax live in the sibling `~/flowmint` Shopify app, not here.
 
 ### Homepage UX (Updated March 2026)
 - Hero: URL input + "Analyze My Brand" CTA + trust signals
