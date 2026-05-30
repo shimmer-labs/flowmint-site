@@ -47,6 +47,8 @@ export interface EmailGenerationContext {
   brandAnalysis: BrandAnalysisResult;
   platform: string;
   format: "html" | "plain";
+  /** Optional user "tweak this email" instruction (results-page sample re-roll). */
+  editInstruction?: string;
 }
 
 const RETRY_DELAY_MS = 2000;
@@ -196,15 +198,18 @@ The template syntax MUST be raw so email platforms can process it.`;
  * stable so subsequent calls hit the cache.
  */
 function buildEmailUserMessage(context: EmailGenerationContext): string {
-  const { flow, emailNumber } = context;
+  const { flow, emailNumber, editInstruction } = context;
   const flowGuidance = getFlowSpecificGuidance(
     flow.id,
     emailNumber,
     flow.emailCount
   );
+  const tweak = editInstruction?.trim()
+    ? `\n\nThe user reviewed a draft of this email and asked for this change:\n"${editInstruction.trim()}"\nApply that change while keeping everything else on-brand and following every rule above.`
+    : "";
   return `You are writing email #${emailNumber} of ${flow.emailCount} for a "${flow.name}" email sequence.
 
-${flowGuidance}
+${flowGuidance}${tweak}
 
 Generate the email now:`;
 }

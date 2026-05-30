@@ -1,41 +1,96 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // Honest, plain-language phases for a non-technical owner. These rotate as
-// ambient narration — they are NOT a progress bar. We deliberately avoid a
-// percentage/countdown: the real analysis takes anywhere from ~25 to ~60s, so
-// any number would lie (and a bar that races to 85% then stalls is the single
-// most-cited trust-killer in loading UX).
+// ambient narration — NOT a progress bar. We deliberately avoid a percentage/
+// countdown: the real analysis takes ~25-60s, so any number would lie (and a bar
+// that races to 85% then stalls is the #1 trust-killer in loading UX). Each phase
+// gets a morphing emoji + the text "flips" into place like a train-station board.
 const PHASES = [
-  "Reading your website…",
-  "Pulling your brand colors…",
-  "Listening to your brand voice…",
-  "Finding your products & services…",
-  "Spotting email opportunities…",
-  "Writing your first email…",
+  { emoji: "🌐", text: "READING YOUR WEBSITE" },
+  { emoji: "🎨", text: "PULLING YOUR COLORS" },
+  { emoji: "🗣️", text: "LEARNING YOUR VOICE" },
+  { emoji: "🧰", text: "FINDING YOUR SERVICES" },
+  { emoji: "💡", text: "SPOTTING OPPORTUNITIES" },
+  { emoji: "✉️", text: "WRITING YOUR FIRST EMAIL" },
 ];
 
-export default function AnalyzingCard() {
-  const [i, setI] = useState(0);
+const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&*?/";
 
+export default function AnalyzingCard() {
+  const [phaseIdx, setPhaseIdx] = useState(0);
+  const [display, setDisplay] = useState(PHASES[0].text);
+  const scrambleRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Advance through phases on a loop (ambient narration, not progress).
   useEffect(() => {
-    const id = setInterval(() => setI((n) => (n + 1) % PHASES.length), 2600);
+    const id = setInterval(() => setPhaseIdx((i) => (i + 1) % PHASES.length), 2800);
     return () => clearInterval(id);
   }, []);
 
+  // Split-flap: scramble each character through random glyphs, resolving the
+  // target text left-to-right whenever the phase changes.
+  useEffect(() => {
+    const target = PHASES[phaseIdx].text;
+    let frame = 0;
+    if (scrambleRef.current) clearInterval(scrambleRef.current);
+    scrambleRef.current = setInterval(() => {
+      frame++;
+      const resolved = Math.floor(frame / 2); // ~2 frames per settled char
+      setDisplay(
+        target
+          .split("")
+          .map((ch, i) => {
+            if (ch === " ") return " ";
+            if (i < resolved) return ch;
+            return GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+          })
+          .join("")
+      );
+      if (resolved >= target.length && scrambleRef.current) {
+        clearInterval(scrambleRef.current);
+        scrambleRef.current = null;
+      }
+    }, 28);
+    return () => {
+      if (scrambleRef.current) clearInterval(scrambleRef.current);
+    };
+  }, [phaseIdx]);
+
   return (
-    <div className="max-w-2xl bg-white rounded-xl border-2 border-mint-600 p-12 text-center shadow-lg">
-      <div className="inline-block w-16 h-16 border-4 border-gray-200 border-t-mint-600 rounded-full animate-spin mb-6"></div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-3">Analyzing your brand</h2>
-      <p className="text-mint-700 font-medium mb-5 min-h-[1.5rem]">{PHASES[i]}</p>
-      {/* Bouncing dots = honest "actively working" motion, no fake progress */}
-      <div className="flex justify-center gap-1.5 mb-5" aria-hidden>
-        <span className="w-2.5 h-2.5 bg-mint-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-        <span className="w-2.5 h-2.5 bg-mint-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-        <span className="w-2.5 h-2.5 bg-mint-500 rounded-full animate-bounce"></span>
+    <div className="max-w-2xl w-full mx-auto rounded-2xl bg-gray-900 p-10 text-center shadow-xl">
+      <div className="text-5xl mb-5 leading-none" aria-hidden>
+        {PHASES[phaseIdx].emoji}
       </div>
-      <p className="text-sm text-gray-500">
+      <div className="text-xs font-semibold uppercase tracking-[0.25em] text-mint-400 mb-4">
+        Analyzing your brand
+      </div>
+
+      {/* Split-flap departure board */}
+      <div className="flex flex-wrap justify-center gap-1 mb-6 min-h-[2rem]" aria-label={PHASES[phaseIdx].text}>
+        {display.split("").map((ch, i) =>
+          ch === " " ? (
+            <span key={i} className="w-2" />
+          ) : (
+            <span
+              key={i}
+              className="inline-flex items-center justify-center w-6 h-8 rounded bg-gray-800 text-gray-100 font-mono text-sm border-b-2 border-black/50 shadow-inner"
+            >
+              {ch}
+            </span>
+          )
+        )}
+      </div>
+
+      {/* Constant "working" motion */}
+      <div className="flex justify-center gap-1.5 mb-5" aria-hidden>
+        <span className="w-2 h-2 bg-mint-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+        <span className="w-2 h-2 bg-mint-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+        <span className="w-2 h-2 bg-mint-400 rounded-full animate-bounce"></span>
+      </div>
+
+      <p className="text-sm text-gray-400">
         This usually takes 25&ndash;60 seconds &mdash; we&apos;re reading your whole site, not just the homepage.
       </p>
     </div>

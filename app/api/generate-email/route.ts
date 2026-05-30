@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { flow, emailNumber = 1, brandAnalysis, platform = "klaviyo", format = "html" } = body;
+    const { flow, emailNumber = 1, brandAnalysis, platform = "klaviyo", format = "html", editInstruction } = body;
 
     // Validate inputs
     if (!flow || !brandAnalysis) {
@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
       brandAnalysis: brandAnalysis as BrandAnalysisResult,
       platform,
       format,
+      editInstruction: typeof editInstruction === "string" ? editInstruction : undefined,
     });
 
     return NextResponse.json({

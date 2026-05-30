@@ -190,6 +190,20 @@ Audited recent `email_templates` in Supabase. Findings + placement:
 
 3. **CTA links not sourced from the scanned site (WALK).** GHL emails correctly use `{{custom_values.booking_url}}` / `{{custom_values.website_url}}` / `{{custom_values.review_url}}` for CTAs (right pattern — no hardcoding). But we never harvest the real URLs from the scan, and the generator isn't passed any site URLs, so those Custom Values render empty unless the client sets them in GHL. Folds into the parked "link asset extraction into GHL Custom Values" item. CRAWL-lite mitigation worth considering: thread the real site/booking URL into the generation context so there's a sensible value. Kept WALK for now.
 
+### Results-page redesign (CRAWL polish — 2026-05-30, Logan + /ask-ux)
+
+Post-analysis page rethink. Shipped in two passes.
+
+**Pass 1 — DONE (quick wins):**
+- [x] Split-flap / departure-board loading animation in `AnalyzingCard` (morphing emoji per phase + scramble-resolve text on a dark card; honest, no fake %). Homepage + dashboard.
+- [x] Inline "Ask AI to tweak it" on the results sample: ghost button + composer + quick chips (shorter / more casual / add an offer / less salesy), via a new optional `editInstruction` param on `/api/generate-email` (ephemeral, no auth, unlimited for free users). Verified: shortens on request, still closes HTML + keeps unsubscribe.
+
+**Pass 2 — TODO (the bigger rework). Decisions locked:**
+- [ ] Reorder: Brand Card → first email → small mid CTA → flow library → big primary CTA last.
+- [ ] Flow-value cards: recommended (color, click-to-preview) + "full playbook" greyed **behind an expander**. Each card: why/goal + a few what-to-include bullets + a **named-range ROI stat with a "Klaviyo/Omnisend benchmarks, your results vary" footnote**.
+- [ ] **Author a SERVICE-BUSINESS flow library** (welcome/new-lead, post-job follow-up + review ask, seasonal maintenance reminder, reactivation/win-back, referral) with why/goals/ROI — the beta cohort is local service, not e-com. Port + adapt the rich metadata shape from `~/flowmint/app/utils/flow-mappings.ts` (862-line: purpose, triggerEvent, expectedConversionRate, bestPractices, emailSequence) + business-model mappings into flowmint-site as the single source of truth. This absorbs the parked "ICP-aware flow library expansion" item.
+- ROI benchmark sources gathered (Klaviyo/Omnisend): welcome ~45-50% open / ~$2-3 per contact; cart-style ~50% open; 3-email sequences ~6.5x single-email revenue.
+
 ### Slice 5: Internal rehearsal
 
 **Goal:** Logan runs the full flow end-to-end on his own (or a dummy) GHL location without intervention. Catches anything the slices missed.

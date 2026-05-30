@@ -92,6 +92,11 @@ function ResultsPage() {
   const [copySuccess, setCopySuccess] = useState(false);
   const sampleReqId = useRef(0);
 
+  // Inline "ask AI to tweak it" on the sample email.
+  const [showTweak, setShowTweak] = useState(false);
+  const [tweakInput, setTweakInput] = useState("");
+  const [tweaking, setTweaking] = useState(false);
+
   // Batch generation of the rest of the active flow.
   const [batchGenerating, setBatchGenerating] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ completed: 0, total: 0, currentFlow: "" });
@@ -186,6 +191,45 @@ function ResultsPage() {
       sessionStorage.removeItem(`sample-${analysisId}-${activeFlow.id}-${selectedPlatform}-${selectedFormat}`);
     }
     setSampleNonce((n) => n + 1);
+  };
+
+  // Re-roll the sample with a user instruction folded into the prompt. Reuses the
+  // ephemeral /api/generate-email path (no auth, no persistence) and overwrites the
+  // cached sample so the tweak sticks for this flow/platform/format.
+  const applyTweak = async (instruction: string) => {
+    const text = instruction.trim();
+    if (!text || !activeFlow || !analysis) return;
+    const reqId = ++sampleReqId.current;
+    setTweaking(true);
+    setSampleError(null);
+    try {
+      const res = await fetch("/api/generate-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          flow: activeFlow,
+          emailNumber: 1,
+          brandAnalysis: analysis,
+          platform: selectedPlatform,
+          format: selectedFormat,
+          editInstruction: text,
+        }),
+      });
+      if (!res.ok) throw new Error("tweak failed");
+      const data = await res.json();
+      if (reqId === sampleReqId.current) {
+        setSampleEmail(data.email);
+        try {
+          sessionStorage.setItem(`sample-${analysisId}-${activeFlow.id}-${selectedPlatform}-${selectedFormat}`, JSON.stringify(data.email));
+        } catch {}
+        setShowTweak(false);
+        setTweakInput("");
+      }
+    } catch {
+      if (reqId === sampleReqId.current) setSampleError("Couldn't apply that tweak. Try again or hit Regenerate.");
+    } finally {
+      if (reqId === sampleReqId.current) setTweaking(false);
+    }
   };
 
   // If the analysis was run logged-out and the user has since signed in, claim
@@ -478,10 +522,10 @@ function ResultsPage() {
             </div>
 
             <div className="bg-white rounded-2xl border-2 border-mint-300 shadow-sm overflow-hidden">
-              {sampleGenerating ? (
+              {sampleGenerating || tweaking ? (
                 <div className="flex flex-col items-center justify-center py-16">
                   <div className="inline-block w-10 h-10 border-4 border-gray-200 border-t-mint-600 rounded-full animate-spin mb-4"></div>
-                  <p className="text-lg font-medium text-gray-900">Writing your first email…</p>
+                  <p className="text-lg font-medium text-gray-900">{tweaking ? "Reworking your email…" : "Writing your first email…"}</p>
                   <p className="text-sm text-gray-500 mt-1">About 10 seconds</p>
                 </div>
               ) : sampleError ? (
@@ -510,13 +554,54 @@ function ResultsPage() {
                       <pre className="whitespace-pre-wrap font-sans text-sm text-gray-900">{sampleEmail.body}</pre>
                     )}
                   </div>
-                  <div className="px-6 py-4 border-t border-gray-100 flex flex-wrap gap-3">
-                    <button onClick={handleCopyEmail} className="text-sm font-medium text-gray-700 border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
-                      {copySuccess ? <><span>&#10003;</span> Copied!</> : "Copy"}
-                    </button>
-                    <button onClick={regenerateSample} className="text-sm font-medium text-gray-700 border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors">
-                      Regenerate
-                    </button>
+                  <div className="px-6 py-4 border-t border-gray-100">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button onClick={handleCopyEmail} className="text-sm font-medium text-gray-700 border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
+                        {copySuccess ? <><span>&#10003;</span> Copied!</> : "Copy"}
+                      </button>
+                      <button onClick={regenerateSample} className="text-sm font-medium text-gray-700 border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors">
+                        Regenerate
+                      </button>
+                      <button
+                        onClick={() => setShowTweak((s) => !s)}
+                        className="text-sm font-medium text-mint-700 px-2 py-2 hover:text-mint-800 transition-colors sm:ml-auto"
+                      >
+                        ✦ Ask AI to tweak it
+                      </button>
+                    </div>
+
+                    {showTweak && (
+                      <div className="mt-4 bg-mint-50 border border-mint-100 rounded-xl p-4">
+                        <label className="block text-sm text-gray-700 mb-2">Don&apos;t like what you see? Tell the AI what to change:</label>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            value={tweakInput}
+                            onChange={(e) => setTweakInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") applyTweak(tweakInput); }}
+                            placeholder='e.g. "make it shorter and more casual"'
+                            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-mint-300"
+                          />
+                          <button
+                            onClick={() => applyTweak(tweakInput)}
+                            disabled={!tweakInput.trim()}
+                            className="bg-mint-600 text-white font-semibold text-sm px-5 py-2 rounded-lg hover:bg-mint-700 transition-colors disabled:opacity-50"
+                          >
+                            Tweak ✦
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {["Make it shorter", "More casual", "Add an offer", "Less salesy"].map((chip) => (
+                            <button
+                              key={chip}
+                              onClick={() => applyTweak(chip)}
+                              className="text-xs font-medium px-3 py-1.5 rounded-full bg-white border border-mint-200 text-mint-700 hover:bg-mint-100 transition-colors"
+                            >
+                              {chip}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : null}
